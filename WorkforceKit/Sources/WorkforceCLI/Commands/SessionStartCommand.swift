@@ -12,6 +12,7 @@ struct SessionStartCommand: ParsableCommand {
         let data = try readStdin()
         let event = try JSONDecoder().decode(SessionStartEvent.self, from: data)
         let host = HostDetection.detect()
+        let tmux = detectTmuxSession()
 
         let message = SocketMessage(
             type: .register,
@@ -22,8 +23,41 @@ struct SessionStartCommand: ParsableCommand {
             hostApp: host.app,
             hostBundleId: host.bundleId,
             hostPid: host.pid,
-            status: .active
+            model: event.model,
+            status: .active,
+            tmuxSession: tmux
         )
         SocketClient.send(message)
+    }
+
+    private func detectTmuxSession() -> String? {
+        guard ProcessInfo.processInfo.environment["TMUX"] != nil else {
+            return nil
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["tmux", "display-message", "-p", "#{session_name}"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                return nil
+            }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let name = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            return name?.isEmpty == true ? nil : name
+        } catch {
+            return nil
+        }
     }
 }
