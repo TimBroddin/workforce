@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AgentRowView: View {
     let agent: Agent
-    var onFocus: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -27,6 +26,13 @@ struct AgentRowView: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
 
+                    if let model = agent.model {
+                        Text("\u{00B7}").foregroundStyle(.tertiary)
+                        Text(formatModel(model))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
                     if let tool = agent.currentToolName {
                         Text("\u{00B7}").foregroundStyle(.tertiary)
                         Text("using \(tool)")
@@ -42,13 +48,17 @@ struct AgentRowView: View {
                     }
                 }
             }
-
-            Button("Focus", action: onFocus)
-                .buttonStyle(.borderless)
-                .font(.caption)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
+    }
+
+    private func formatModel(_ model: String) -> String {
+        let lowered = model.lowercased()
+        if lowered.contains("opus") { return "Opus" }
+        if lowered.contains("sonnet") { return "Sonnet" }
+        if lowered.contains("haiku") { return "Haiku" }
+        return model
     }
 
     private func abbreviatePath(_ path: String) -> String {
