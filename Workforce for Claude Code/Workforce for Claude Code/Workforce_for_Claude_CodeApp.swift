@@ -6,8 +6,23 @@ struct Workforce_for_Claude_CodeApp: App {
     @State private var socketServer: SocketServer?
 
     var body: some Scene {
+        Window("Workforce", id: "main") {
+            MainWindowView(store: agentStore)
+        }
+
         MenuBarExtra {
-            ContentView(store: agentStore)
+            Button("Show Workforce") {
+                NSApp.activate()
+                for window in NSApp.windows where window.identifier?.rawValue == "main" {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+            Divider()
+            Text("\(agentStore.agents.count) agent\(agentStore.agents.count == 1 ? "" : "s")")
+            Divider()
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
         } label: {
             let hasPermission = agentStore.agents.values.contains { $0.status == .waitingForPermission }
             let hasWaiting = agentStore.agents.values.contains { $0.status == .waitingForInput }
@@ -24,7 +39,6 @@ struct Workforce_for_Claude_CodeApp: App {
                 Image(systemName: "person.3.fill")
             }
         }
-        .menuBarExtraStyle(.window)
     }
 
     init() {
