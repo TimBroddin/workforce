@@ -6,6 +6,7 @@ struct Workforce: ParsableCommand {
         commandName: "workforce",
         abstract: "CLI companion for Workforce for Claude Code",
         subcommands: [
+            RunCommand.self,
             SessionStartCommand.self,
             PreToolUseCommand.self,
             PostToolUseCommand.self,
