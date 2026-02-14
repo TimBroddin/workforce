@@ -53,10 +53,12 @@ final class AgentStore {
                 registerMinimal(from: message)
                 return
             }
+            let previousStatus = agent.status
             agent.lastActivityAt = message.timestamp
             agent.lastNotificationType = message.notificationType
             if let status = message.status { agent.status = status }
             agents[message.sessionId] = agent
+            NotificationManager.shared.notifyIfNeeded(agent: agent, previousStatus: previousStatus)
 
         case .subagentStart:
             guard var agent = agents[message.sessionId] else {

@@ -33,5 +33,6 @@ struct Workforce_for_Claude_CodeApp: App {
         let server = SocketServer(store: store)
         _socketServer = State(initialValue: server)
         try? server.start()
+        NotificationManager.shared.requestPermission()
     }
 }

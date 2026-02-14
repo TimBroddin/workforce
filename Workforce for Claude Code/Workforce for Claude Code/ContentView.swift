@@ -34,7 +34,7 @@ struct ContentView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(store.sortedAgents) { agent in
                             AgentRowView(agent: agent) {
-                                // Focus will be implemented in Task 8
+                                WindowActivator.activate(agent)
                             }
                             Divider().padding(.horizontal, 8)
                         }
@@ -60,5 +60,17 @@ struct ContentView: View {
             .padding(.vertical, 6)
         }
         .frame(width: 380)
+        .onReceive(NotificationCenter.default.publisher(for: .focusAgent)) { notification in
+            if let sessionId = notification.userInfo?["sessionId"] as? String,
+               let agent = store.agents[sessionId] {
+                WindowActivator.activate(agent)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                store.pruneStale()
+            }
+        }
     }
 }
