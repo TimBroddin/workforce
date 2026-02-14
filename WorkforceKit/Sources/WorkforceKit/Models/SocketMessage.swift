@@ -23,11 +23,14 @@ public struct SocketMessage: Codable, Sendable {
     public var hostBundleId: String?
     public var hostPid: Int32?
 
+    public var model: String?
+
     // Status update fields
     public var status: AgentStatus?
     public var toolName: String?
     public var notificationType: String?
     public var agentType: String?
+    public var tmuxSession: String?
 
     public init(
         type: SocketMessageType,
@@ -39,10 +42,12 @@ public struct SocketMessage: Codable, Sendable {
         hostApp: HostApp? = nil,
         hostBundleId: String? = nil,
         hostPid: Int32? = nil,
+        model: String? = nil,
         status: AgentStatus? = nil,
         toolName: String? = nil,
         notificationType: String? = nil,
-        agentType: String? = nil
+        agentType: String? = nil,
+        tmuxSession: String? = nil
     ) {
         self.type = type
         self.sessionId = sessionId
@@ -53,9 +58,11 @@ public struct SocketMessage: Codable, Sendable {
         self.hostApp = hostApp
         self.hostBundleId = hostBundleId
         self.hostPid = hostPid
+        self.model = model
         self.status = status
         self.toolName = toolName
         self.notificationType = notificationType
         self.agentType = agentType
+        self.tmuxSession = tmuxSession
     }
 }

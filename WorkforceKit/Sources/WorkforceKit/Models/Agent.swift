@@ -14,6 +14,7 @@ public enum HostApp: String, Codable, Sendable {
     case vscode
     case cursor
     case warp
+    case ghostty
     case unknown
 }
 
@@ -28,6 +29,9 @@ public struct Agent: Codable, Identifiable, Sendable {
     public let hostApp: HostApp
     public let hostBundleId: String?
     public let hostPid: Int32?
+
+    public let model: String?
+    public let tmuxSession: String?
 
     public let startedAt: Date
     public var lastActivityAt: Date
@@ -44,6 +48,8 @@ public struct Agent: Codable, Identifiable, Sendable {
         hostApp: HostApp,
         hostBundleId: String?,
         hostPid: Int32?,
+        model: String? = nil,
+        tmuxSession: String? = nil,
         startedAt: Date = Date(),
         lastActivityAt: Date = Date(),
         status: AgentStatus = .active,
@@ -58,6 +64,8 @@ public struct Agent: Codable, Identifiable, Sendable {
         self.hostApp = hostApp
         self.hostBundleId = hostBundleId
         self.hostPid = hostPid
+        self.model = model
+        self.tmuxSession = tmuxSession
         self.startedAt = startedAt
         self.lastActivityAt = lastActivityAt
         self.status = status

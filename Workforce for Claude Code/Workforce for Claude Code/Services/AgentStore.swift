@@ -25,6 +25,8 @@ final class AgentStore {
                 hostApp: message.hostApp ?? .unknown,
                 hostBundleId: message.hostBundleId,
                 hostPid: message.hostPid,
+                model: message.model,
+                tmuxSession: message.tmuxSession,
                 status: message.status ?? .active
             )
             agents[message.sessionId] = agent
@@ -98,6 +100,7 @@ final class AgentStore {
             hostApp: message.hostApp ?? .unknown,
             hostBundleId: message.hostBundleId,
             hostPid: message.hostPid,
+            tmuxSession: message.tmuxSession,
             status: message.status ?? .active,
             currentToolName: message.toolName
         )
