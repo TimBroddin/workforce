@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		DE0000012F40829C00B1B19D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = DE0000022F40829C00B1B19D /* SwiftTerm */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		DEA9357C2F40829C00B1B19D /* Workforce for Claude Code.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Workforce for Claude Code.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -17,10 +21,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXBuildFile section */
-		DE0000012F40829C00B1B19D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = DE0000022F40829C00B1B19D /* SwiftTerm */; };
-/* End PBXBuildFile section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		DEA935792F40829C00B1B19D /* Frameworks */ = {
@@ -100,13 +100,13 @@
 			);
 			mainGroup = DEA935732F40829C00B1B19D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DE0000032F40829C00B1B19D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DEA9357D2F40829C00B1B19D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			packageReferences = (
-				DE0000032F40829C00B1B19D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
-			);
 			targets = (
 				DEA9357B2F40829C00B1B19D /* Workforce for Claude Code */,
 			);
@@ -268,7 +268,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -301,7 +300,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
