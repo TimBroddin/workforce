@@ -1,0 +1,16 @@
+# bv (beads viewer) local config and caches
+.bv/
+
+# Swift
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Claude
+.claude/
