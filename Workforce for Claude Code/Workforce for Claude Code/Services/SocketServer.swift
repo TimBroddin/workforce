@@ -60,11 +60,16 @@ final class SocketServer {
     private func processMessage(_ data: Data) {
         let lines = data.split(separator: UInt8(ascii: "\n"))
         for line in lines {
+            if let raw = String(data: Data(line), encoding: .utf8) {
+                NSLog("[Workforce] Received: %@", raw)
+            }
             do {
                 let message = try JSONDecoder().decode(SocketMessage.self, from: Data(line))
+                NSLog("[Workforce] Decoded: type=%@ session=%@ tmux=%@",
+                      message.type.rawValue, message.sessionId, message.tmuxSession ?? "nil")
                 store.handleMessage(message)
             } catch {
-                // Malformed message -- ignore
+                NSLog("[Workforce] Decode error: %@", error.localizedDescription)
             }
         }
     }
