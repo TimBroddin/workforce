@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     let store: AgentStore
+    @State private var hooksInstalled = HookInstaller.isInstalled()
+    @State private var installMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -9,9 +11,35 @@ struct ContentView: View {
                 Text("Workforce")
                     .font(.headline)
                 Spacer()
+                if hooksInstalled {
+                    Button {
+                        uninstallHooks()
+                    } label: {
+                        Label("Uninstall Hooks", systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        installHooks()
+                    } label: {
+                        Label("Install Hooks", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+
+            if let installMessage {
+                Text(installMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
 
             Divider()
 
@@ -71,6 +99,40 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(60))
                 store.pruneStale()
             }
+        }
+    }
+
+    private func installHooks() {
+        guard let binary = HookInstaller.findBinary() else {
+            installMessage = "workforce binary not found. Build and copy to /usr/local/bin/workforce first."
+            clearMessage()
+            return
+        }
+        do {
+            let count = try HookInstaller.install(binaryPath: binary)
+            hooksInstalled = true
+            installMessage = count > 0 ? "Installed \(count) hooks." : "Hooks already installed."
+        } catch {
+            installMessage = "Install failed: \(error.localizedDescription)"
+        }
+        clearMessage()
+    }
+
+    private func uninstallHooks() {
+        do {
+            let count = try HookInstaller.uninstall()
+            hooksInstalled = false
+            installMessage = "Removed \(count) hooks."
+        } catch {
+            installMessage = "Uninstall failed: \(error.localizedDescription)"
+        }
+        clearMessage()
+    }
+
+    private func clearMessage() {
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            installMessage = nil
         }
     }
 }
