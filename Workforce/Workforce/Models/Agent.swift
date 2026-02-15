@@ -27,6 +27,7 @@ public struct Agent: Codable, Identifiable, Sendable {
     public var currentToolName: String?
     public var lastNotificationType: String?
     public var subagentCount: Int
+    public var paneTitle: String?
 
     public init(
         sessionId: String,
@@ -41,7 +42,8 @@ public struct Agent: Codable, Identifiable, Sendable {
         status: AgentStatus = .active,
         currentToolName: String? = nil,
         lastNotificationType: String? = nil,
-        subagentCount: Int = 0
+        subagentCount: Int = 0,
+        paneTitle: String? = nil
     ) {
         self.sessionId = sessionId
         self.name = name
@@ -56,5 +58,6 @@ public struct Agent: Codable, Identifiable, Sendable {
         self.currentToolName = currentToolName
         self.lastNotificationType = lastNotificationType
         self.subagentCount = subagentCount
+        self.paneTitle = paneTitle
     }
 }

@@ -13,7 +13,7 @@ struct PreToolUseCommand: ParsableCommand {
         let event = try JSONDecoder().decode(ToolUseEvent.self, from: data)
         SocketClient.send(SocketMessage(
             type: .updateTool,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: .active,
             toolName: event.toolName
@@ -32,7 +32,7 @@ struct PostToolUseCommand: ParsableCommand {
         let event = try JSONDecoder().decode(ToolUseEvent.self, from: data)
         SocketClient.send(SocketMessage(
             type: .updateTool,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: .active,
             toolName: nil
@@ -51,7 +51,7 @@ struct PostToolUseFailureCommand: ParsableCommand {
         let event = try JSONDecoder().decode(ToolUseEvent.self, from: data)
         SocketClient.send(SocketMessage(
             type: .updateTool,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: .active,
             toolName: nil

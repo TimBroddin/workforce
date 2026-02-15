@@ -1,13 +1,14 @@
 import ArgumentParser
+import Foundation
+import WorkforceKit
 
 @main
 struct Workforce: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "workforce",
-        abstract: "CLI companion for Workforce for Claude Code",
+        abstract: "CLI companion for Workforce",
         subcommands: [
             RunCommand.self,
-            SessionStartCommand.self,
             PreToolUseCommand.self,
             PostToolUseCommand.self,
             PostToolUseFailureCommand.self,
@@ -18,6 +19,7 @@ struct Workforce: ParsableCommand {
             SubagentStopCommand.self,
             InstallHooksCommand.self,
             UninstallHooksCommand.self,
-        ]
+        ],
+        defaultSubcommand: nil
     )
 }

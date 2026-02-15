@@ -1,6 +1,9 @@
 import Foundation
-import NIOCore
-import NIOPosix
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 import WorkforceKit
 
 enum SocketClient {
@@ -8,30 +11,65 @@ enum SocketClient {
 
     /// Send a message to the Workforce app. Returns silently if the app isn't running.
     static func send(_ message: SocketMessage) {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        defer { try? group.syncShutdownGracefully() }
-
         do {
             let data = try JSONEncoder().encode(message)
-            let payload = data + Data([0x0A]) // newline delimiter
+            var payload = [UInt8](data)
+            payload.append(0x0A) // newline delimiter
 
-            let bootstrap = ClientBootstrap(group: group)
-                .channelOption(.socketOption(.so_reuseaddr), value: 1)
-                .connectTimeout(.milliseconds(100))
-                .channelInitializer { channel in
-                    channel.eventLoop.makeSucceededVoidFuture()
+            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard fd >= 0 else {
+                fputs("[workforce] socket() failed: \(errno)\n", stderr)
+                return
+            }
+            defer { close(fd) }
+
+            var addr = sockaddr_un()
+            addr.sun_family = sa_family_t(AF_UNIX)
+            let pathBytes = socketPath.utf8CString
+            guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+                fputs("[workforce] socket path too long\n", stderr)
+                return
+            }
+            withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: pathBytes.count) { dest in
+                    pathBytes.withUnsafeBufferPointer { src in
+                        _ = memcpy(dest, src.baseAddress!, src.count)
+                    }
                 }
+            }
 
-            let channel = try bootstrap
-                .connect(unixDomainSocketPath: socketPath)
-                .wait()
+            let connectResult = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    Darwin.connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
+            }
+            guard connectResult == 0 else {
+                fputs("[workforce] connect() failed: \(errno) (\(String(cString: strerror(errno))))\n", stderr)
+                return
+            }
 
-            var buffer = channel.allocator.buffer(capacity: payload.count)
-            buffer.writeBytes(payload)
-            try channel.writeAndFlush(buffer).wait()
-            try channel.close().wait()
+            payload.withUnsafeBytes { buf in
+                var sent = 0
+                while sent < buf.count {
+                    let n = Darwin.write(fd, buf.baseAddress! + sent, buf.count - sent)
+                    guard n > 0 else {
+                        fputs("[workforce] write() failed at offset \(sent): \(errno)\n", stderr)
+                        return
+                    }
+                    sent += n
+                }
+                fputs("[workforce] sent \(sent) bytes to \(socketPath)\n", stderr)
+            }
+
+            // Graceful shutdown: send FIN so the NWConnection server sees
+            // isComplete=true and processes the buffered data before we close.
+            Darwin.shutdown(fd, SHUT_WR)
+
+            // Wait for the server to close its end (read returns 0).
+            var drain = [UInt8](repeating: 0, count: 1)
+            _ = Darwin.read(fd, &drain, 1)
         } catch {
-            // App not running or socket unavailable -- exit silently
+            fputs("[workforce] encode error: \(error)\n", stderr)
         }
     }
 }

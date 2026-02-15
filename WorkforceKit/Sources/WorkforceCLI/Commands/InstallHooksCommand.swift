@@ -21,10 +21,10 @@ struct InstallHooksCommand: ParsableCommand {
         }
 
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        let binaryPath = ProcessInfo.processInfo.arguments[0]
+        let currentBinary = ProcessInfo.processInfo.arguments[0]
+        let binaryPath = try Self.installBinary(from: currentBinary)
 
         let hookEvents: [(String, String)] = [
-            ("SessionStart", "session-start"),
             ("PreToolUse", "pre-tool-use"),
             ("PostToolUse", "post-tool-use"),
             ("PostToolUseFailure", "post-tool-use-failure"),
@@ -65,5 +65,41 @@ struct InstallHooksCommand: ParsableCommand {
 
         print("Installed \(installed) hooks. (\(hookEvents.count - installed) already present)")
         print("Settings written to: \(settingsPath.path)")
+    }
+
+    /// Copy the workforce binary to /usr/local/bin/workforce.
+    /// Returns the destination path.
+    private static func installBinary(from sourcePath: String) throws -> String {
+        let destDir = "/usr/local/bin"
+        let destPath = "\(destDir)/workforce"
+
+        // Resolve the source to an absolute path
+        let source = sourcePath.hasPrefix("/")
+            ? sourcePath
+            : FileManager.default.currentDirectoryPath + "/" + sourcePath
+
+        // If already running from /usr/local/bin, nothing to do
+        guard source != destPath else { return destPath }
+
+        guard FileManager.default.isExecutableFile(atPath: source) else {
+            throw ValidationError("Source binary not found or not executable: \(source)")
+        }
+
+        // Create /usr/local/bin if it doesn't exist
+        if !FileManager.default.fileExists(atPath: destDir) {
+            try FileManager.default.createDirectory(
+                atPath: destDir,
+                withIntermediateDirectories: true
+            )
+        }
+
+        // Remove existing binary if present, then copy
+        if FileManager.default.fileExists(atPath: destPath) {
+            try FileManager.default.removeItem(atPath: destPath)
+        }
+        try FileManager.default.copyItem(atPath: source, toPath: destPath)
+
+        print("Installed workforce binary to \(destPath)")
+        return destPath
     }
 }

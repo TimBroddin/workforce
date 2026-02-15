@@ -13,7 +13,7 @@ struct StopCommand: ParsableCommand {
         let event = try JSONDecoder().decode(HookEventBase.self, from: data)
         SocketClient.send(SocketMessage(
             type: .updateStatus,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: .idle
         ))

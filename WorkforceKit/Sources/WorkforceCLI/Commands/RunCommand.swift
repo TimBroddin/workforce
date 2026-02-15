@@ -1,50 +1,31 @@
 import ArgumentParser
 import Foundation
+import WorkforceKit
 
 struct RunCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
-        abstract: "Run Claude Code inside a tmux session",
-        discussion: """
-        Wraps `claude` in a named tmux session so the Workforce app can attach to it.
-        Everything after -- is passed to claude.
-
-        Examples:
-          workforce run
-          workforce run -- --model opus
-          workforce run -- "fix the login bug"
-        """
+        abstract: "Launch a coding agent in a tmux session"
     )
 
-    @Argument(parsing: .allUnrecognized)
-    var claudeArgs: [String] = []
+    @Option(name: .long, help: "Agent binary to launch (default: claude)")
+    var agent: String = "claude"
+
+    @Argument(parsing: .captureForPassthrough)
+    var agentArgs: [String] = []
 
     func run() throws {
-        // Check tmux is available
-        let whichTmux = Process()
-        whichTmux.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        whichTmux.arguments = ["which", "tmux"]
-        whichTmux.standardOutput = FileHandle.nullDevice
-        whichTmux.standardError = FileHandle.nullDevice
-        try whichTmux.run()
-        whichTmux.waitUntilExit()
-        guard whichTmux.terminationStatus == 0 else {
+        // Resolve tmux path
+        guard let tmuxPath = resolveBinary("tmux") else {
             throw ValidationError(
                 "tmux not found. Install with: brew install tmux"
             )
         }
 
-        // Check claude is available
-        let whichClaude = Process()
-        whichClaude.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        whichClaude.arguments = ["which", "claude"]
-        whichClaude.standardOutput = FileHandle.nullDevice
-        whichClaude.standardError = FileHandle.nullDevice
-        try whichClaude.run()
-        whichClaude.waitUntilExit()
-        guard whichClaude.terminationStatus == 0 else {
+        // Resolve agent binary path
+        guard let agentPath = resolveBinary(agent) else {
             throw ValidationError(
-                "claude not found. Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code"
+                "\(agent) not found. Make sure it is installed and in your PATH."
             )
         }
 
@@ -53,12 +34,31 @@ struct RunCommand: ParsableCommand {
         let hex = hexBytes.map { String(format: "%02x", $0) }.joined()
         let sessionName = "workforce-\(hex)"
 
-        // Build tmux command: tmux new-session -s <name> -- claude [args...]
+        // Register agent with the Workforce app
+        let cwd = FileManager.default.currentDirectoryPath
+        let message = SocketMessage(
+            type: .register,
+            sessionId: sessionName,
+            cwd: cwd,
+            name: NameGenerator.generate(from: sessionName),
+            avatarSeed: sessionName,
+            status: .idle,
+            agentType: agent,
+            tmuxSession: sessionName
+        )
+        SocketClient.send(message)
+
+        // Build shell command string for tmux
+        let shellCommand = ([agentPath] + agentArgs)
+            .map { $0.contains(" ") ? "'\($0)'" : $0 }
+            .joined(separator: " ")
+
+        // Launch via shell so tmux gets a proper invocation.
+        // Set WORKFORCE_SESSION so hooks running inside this tmux session
+        // can map Claude's session_id back to the workforce agent.
         let tmux = Process()
-        tmux.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        var tmuxArgs = ["tmux", "new-session", "-s", sessionName, "--", "claude"]
-        tmuxArgs.append(contentsOf: claudeArgs)
-        tmux.arguments = tmuxArgs
+        tmux.executableURL = URL(fileURLWithPath: "/bin/sh")
+        tmux.arguments = ["-c", "\(tmuxPath) new-session -s \(sessionName) -e WORKFORCE_SESSION=\(sessionName) '\(shellCommand)'"]
         tmux.standardInput = FileHandle.standardInput
         tmux.standardOutput = FileHandle.standardOutput
         tmux.standardError = FileHandle.standardError
@@ -72,5 +72,25 @@ struct RunCommand: ParsableCommand {
 
         // Exit with tmux's exit code
         throw ExitCode(tmux.terminationStatus)
+    }
+
+    private func resolveBinary(_ name: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["which", name]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let path, !path.isEmpty else { return nil }
+            return path
+        } catch {
+            return nil
+        }
     }
 }

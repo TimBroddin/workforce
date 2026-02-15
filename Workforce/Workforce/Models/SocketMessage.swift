@@ -1,6 +1,7 @@
 import Foundation
+import SwiftUI
 
-public enum SocketMessageType: String, Codable, Sendable {
+public enum SocketMessageType: String, Codable, Sendable, CaseIterable {
     case register
     case updateStatus
     case updateTool
@@ -8,6 +9,18 @@ public enum SocketMessageType: String, Codable, Sendable {
     case subagentStart
     case subagentStop
     case deregister
+
+    var badgeColor: Color {
+        switch self {
+        case .register: .green
+        case .deregister: .red
+        case .updateTool: .blue
+        case .updateStatus: .gray
+        case .notification: .orange
+        case .subagentStart: .purple
+        case .subagentStop: .purple
+        }
+    }
 }
 
 public struct SocketMessage: Codable, Sendable {

@@ -55,21 +55,6 @@ public struct NotificationEvent: Decodable, Sendable {
     }
 }
 
-/// SessionStart event
-public struct SessionStartEvent: Decodable, Sendable {
-    public let sessionId: String
-    public let cwd: String
-    public let hookEventName: String
-    public let source: String?
-
-    enum CodingKeys: String, CodingKey {
-        case sessionId = "session_id"
-        case cwd
-        case hookEventName = "hook_event_name"
-        case source
-    }
-}
-
 /// SubagentStart / SubagentStop event
 public struct SubagentEvent: Decodable, Sendable {
     public let sessionId: String

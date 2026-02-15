@@ -13,7 +13,7 @@ struct SessionEndCommand: ParsableCommand {
         let event = try JSONDecoder().decode(HookEventBase.self, from: data)
         SocketClient.send(SocketMessage(
             type: .deregister,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd
         ))
     }

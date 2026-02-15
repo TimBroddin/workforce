@@ -13,7 +13,7 @@ struct SubagentStartCommand: ParsableCommand {
         let event = try JSONDecoder().decode(SubagentEvent.self, from: data)
         SocketClient.send(SocketMessage(
             type: .subagentStart,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: .active,
             agentType: event.agentType
@@ -32,7 +32,7 @@ struct SubagentStopCommand: ParsableCommand {
         let event = try JSONDecoder().decode(SubagentEvent.self, from: data)
         SocketClient.send(SocketMessage(
             type: .subagentStop,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             agentType: event.agentType
         ))

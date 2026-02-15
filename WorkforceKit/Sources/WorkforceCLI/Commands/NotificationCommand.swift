@@ -16,7 +16,7 @@ struct NotificationCommand: ParsableCommand {
             : .waitingForInput
         SocketClient.send(SocketMessage(
             type: .notification,
-            sessionId: event.sessionId,
+            sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: status,
             notificationType: event.type
