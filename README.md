@@ -11,7 +11,7 @@ Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs
 ## Features
 
 - **Agent Dashboard** — See all running agents at a glance with live status indicators (active, idle, waiting for input/permission)
-- **Embedded Terminals** — View agent terminal sessions directly in the app via SwiftTerm
+- **Embedded Terminals** — View agent terminal sessions directly in the app via xterm.js
 - **Notifications** — Get macOS alerts when agents need interaction
 - **Event Viewer** — Debug hook messages with a real-time event log and type filtering
 - **Tmux Integration** — Agents run in tmux sessions that persist independently of the app
@@ -25,23 +25,11 @@ Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs
 
 ## Installation
 
-### Homebrew (coming soon)
-
-```sh
-brew install --cask timbroddin/workforce/workforce
-```
-
-### Download
-
 Grab the latest release from the [Releases](https://github.com/timbroddin/workforce/releases) page.
-
-### Setup
-
-Once the app is running, click **Install Binary & Hooks** in the settings to install the `workforce` CLI and register the Claude Code hooks.
 
 ## Usage
 
-1. Launch the Workforce app
+1. Launch the Workforce app — the first-run wizard will guide you through installing the CLI binary and Claude Code hooks
 2. Spawn agents from the app, or start Claude Code sessions that will be picked up automatically via hooks
 3. Monitor agent status, view terminals, and receive notifications when agents need input
 
