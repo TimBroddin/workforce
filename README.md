@@ -25,6 +25,14 @@ Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs
 
 ## Installation
 
+### Homebrew
+
+```sh
+brew install --cask timbroddin/tap/workforce
+```
+
+### Download
+
 Grab the latest release from the [Releases](https://github.com/timbroddin/workforce/releases) page.
 
 ## Usage
