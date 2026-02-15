@@ -2,7 +2,7 @@
 
 > ⚠️ **SUPER EXPERIMENTAL & BUGGY ATM** ⚠️ — Workforce is under active development. Expect rough edges and breaking changes.
 
-Stop losing track of your AI coding agents. Workforce is a native macOS app that uses tmux to keep all your agent sessions visible and manageable in one place.
+Stop losing track of your AI coding agents. Workforce is a native macOS app that uses some tmux magic under to hood to keep all your agent sessions visible and manageable in one place.
 
 Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) via its hook system, with basic support for other agents.
 
