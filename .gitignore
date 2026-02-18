@@ -3,6 +3,7 @@
 
 # Swift
 .build/
+build/
 .swiftpm/
 DerivedData/
 *.xcuserstate

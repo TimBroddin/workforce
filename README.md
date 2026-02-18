@@ -4,7 +4,7 @@
 
 Stop losing track of your AI coding agents. Workforce is a native macOS app that uses some tmux magic under to hood to keep all your agent sessions visible and manageable in one place.
 
-Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) via its hook system, with basic support for other agents.
+Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) hooks and [OpenCode](https://opencode.ai/) plugins.
 
 ![Workforce screenshot](screenshot.png)
 
@@ -21,7 +21,7 @@ Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs
 
 - macOS 15.0 (Sequoia) or later
 - [tmux](https://github.com/tmux/tmux)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (for full hook integration)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai/) (for full event integration)
 
 ## Installation
 
@@ -46,8 +46,8 @@ Grab the latest release from the [Releases](https://github.com/timbroddin/workfo
 ```sh
 workforce run [prompt]              # Launch Claude Code in tmux (default)
 workforce run --agent codex [prompt] # Launch a different agent (codex, opencode, ...)
-workforce install-hooks      # Register hooks in Claude Code settings
-workforce uninstall-hooks    # Remove hooks from Claude Code settings
+workforce install-hooks      # Register Claude hooks + OpenCode plugin
+workforce uninstall-hooks    # Remove Claude hooks + OpenCode plugin
 ```
 
 ## How It Works

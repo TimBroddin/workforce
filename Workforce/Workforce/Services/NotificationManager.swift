@@ -21,7 +21,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         // Always send system notifications, even when the app is active.
 
         let content = UNMutableNotificationContent()
-        content.title = agent.paneTitle ?? agent.name
+        content.title = agent.displayTitle
         content.body = agent.status == .waitingForPermission ? "Needs permission to continue" : "Waiting for your input"
         content.sound = .default
         content.userInfo = ["sessionId": agent.sessionId]

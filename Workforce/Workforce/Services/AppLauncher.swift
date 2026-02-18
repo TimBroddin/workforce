@@ -110,6 +110,20 @@ enum AppLauncher {
         try? process.run()
     }
 
+    static func sendTmuxInput(session: String, input: String, pressEnter: Bool = true) {
+        let tmuxPath = findTmux() ?? "/opt/homebrew/bin/tmux"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tmuxPath)
+        var arguments = ["send-keys", "-t", session, input]
+        if pressEnter {
+            arguments.append("C-m")
+        }
+        process.arguments = arguments
+        process.standardOutput = nil
+        process.standardError = nil
+        try? process.run()
+    }
+
     private static func findTmux() -> String? {
         let candidates = [
             "/opt/homebrew/bin/tmux",

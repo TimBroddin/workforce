@@ -10,9 +10,12 @@ struct SetupWizardView: View {
 
     // Install status
     @State private var cliInstalled = false
+    @State private var cliNeedsUpdate = false
     @State private var installedPath: String?
-    @State private var hooksInstalled = false
+    @State private var claudeHooksInstalled = false
+    @State private var openCodeHooksInstalled = false
     @State private var installError: String?
+    @State private var cliUpdateMessage: String?
 
     var body: some View {
         ScrollView {
@@ -112,8 +115,8 @@ struct SetupWizardView: View {
                 .font(.headline)
 
             HStack(spacing: 8) {
-                Image(systemName: cliInstalled ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(cliInstalled ? .green : .secondary)
+                Image(systemName: cliInstalled ? (cliNeedsUpdate ? "arrow.triangle.2.circlepath.circle.fill" : "checkmark.circle.fill") : "circle")
+                    .foregroundStyle(cliInstalled ? (cliNeedsUpdate ? .yellow : .green) : .secondary)
                     .frame(width: 20)
 
                 Text("Workforce CLI")
@@ -124,12 +127,15 @@ struct SetupWizardView: View {
                 if !cliInstalled {
                     Button("Install") { installCLI() }
                         .disabled(HookInstaller.findBinary() == nil)
+                } else if cliNeedsUpdate {
+                    Button("Update") { installCLI() }
+                        .disabled(HookInstaller.findBinary() == nil)
                 }
             }
 
             HStack(spacing: 8) {
-                Image(systemName: hooksInstalled ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(hooksInstalled ? .green : .secondary)
+                Image(systemName: claudeHooksInstalled ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(claudeHooksInstalled ? .green : .secondary)
                     .frame(width: 20)
 
                 Text("Claude Code Hooks")
@@ -137,9 +143,27 @@ struct SetupWizardView: View {
 
                 Spacer()
 
-                if !hooksInstalled {
-                    Button("Install") { installHooks() }
-                        .disabled(!cliInstalled)
+                Button(claudeHooksInstalled ? "Reinstall" : "Install") { installClaudeHooks() }
+                    .disabled(!cliInstalled)
+                if claudeHooksInstalled {
+                    Button("Uninstall") { uninstallClaudeHooks() }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: openCodeHooksInstalled ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(openCodeHooksInstalled ? .green : .secondary)
+                    .frame(width: 20)
+
+                Text("OpenCode Hooks")
+                    .fontWeight(.medium)
+
+                Spacer()
+
+                Button(openCodeHooksInstalled ? "Reinstall" : "Install") { installOpenCodeHooks() }
+                    .disabled(!cliInstalled)
+                if openCodeHooksInstalled {
+                    Button("Uninstall") { uninstallOpenCodeHooks() }
                 }
             }
 
@@ -147,6 +171,12 @@ struct SetupWizardView: View {
                 Text(installError)
                     .font(.caption)
                     .foregroundStyle(.red)
+            }
+
+            if let cliUpdateMessage {
+                Text(cliUpdateMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -183,11 +213,28 @@ struct SetupWizardView: View {
         let path = "/usr/local/bin/workforce"
         cliInstalled = FileManager.default.isExecutableFile(atPath: path)
         if cliInstalled { installedPath = path }
-        hooksInstalled = HookInstaller.isInstalled()
+        switch HookInstaller.cliVersionStatus() {
+        case .needsUpdate(let installedVersion, let appVersion):
+            cliNeedsUpdate = true
+            if let installedVersion {
+                cliUpdateMessage = "CLI update available: installed \(installedVersion), app \(appVersion)"
+            } else {
+                cliUpdateMessage = "CLI update available: installed version unknown, app \(appVersion)"
+            }
+        case .upToDate:
+            cliNeedsUpdate = false
+            cliUpdateMessage = nil
+        case .notInstalled:
+            cliNeedsUpdate = false
+            cliUpdateMessage = nil
+        }
+        claudeHooksInstalled = HookInstaller.isClaudeHooksInstalled()
+        openCodeHooksInstalled = HookInstaller.isOpenCodeHooksInstalled()
     }
 
     private func installCLI() {
         installError = nil
+        cliUpdateMessage = nil
         guard let source = HookInstaller.findBinary() else {
             installError = "workforce binary not found in build output"
             return
@@ -195,17 +242,49 @@ struct SetupWizardView: View {
         do {
             installedPath = try HookInstaller.installBinary(from: source)
             cliInstalled = true
+            cliNeedsUpdate = false
         } catch {
             installError = error.localizedDescription
         }
     }
 
-    private func installHooks() {
+    private func installClaudeHooks() {
         installError = nil
         guard let path = installedPath else { return }
         do {
-            _ = try HookInstaller.install(binaryPath: path)
-            hooksInstalled = true
+            _ = try HookInstaller.installClaude(binaryPath: path)
+            claudeHooksInstalled = HookInstaller.isClaudeHooksInstalled()
+        } catch {
+            installError = error.localizedDescription
+        }
+    }
+
+    private func installOpenCodeHooks() {
+        installError = nil
+        guard let path = installedPath else { return }
+        do {
+            _ = try HookInstaller.installOpenCode(binaryPath: path)
+            openCodeHooksInstalled = HookInstaller.isOpenCodeHooksInstalled()
+        } catch {
+            installError = error.localizedDescription
+        }
+    }
+
+    private func uninstallClaudeHooks() {
+        installError = nil
+        do {
+            _ = try HookInstaller.uninstallClaude()
+            claudeHooksInstalled = HookInstaller.isClaudeHooksInstalled()
+        } catch {
+            installError = error.localizedDescription
+        }
+    }
+
+    private func uninstallOpenCodeHooks() {
+        installError = nil
+        do {
+            _ = try HookInstaller.uninstallOpenCode()
+            openCodeHooksInstalled = HookInstaller.isOpenCodeHooksInstalled()
         } catch {
             installError = error.localizedDescription
         }

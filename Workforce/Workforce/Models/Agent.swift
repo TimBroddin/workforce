@@ -29,6 +29,22 @@ public struct Agent: Codable, Identifiable, Sendable {
     public var subagentCount: Int
     public var paneTitle: String?
 
+    /// User-facing title for the agent, preferring meaningful pane titles.
+    public var displayTitle: String {
+        let title: String? = paneTitle.flatMap { paneTitle in
+            let trimmed = paneTitle.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { return nil }
+            if Self.ignoredPaneTitles.contains(trimmed.lowercased()) { return nil }
+            if !trimmed.contains(" "), trimmed.contains(".") { return nil }
+            return trimmed
+        }
+        let raw = title ?? agentType.capitalized
+        if raw.count > 2, raw.hasPrefix("_ ") {
+            return String(raw.dropFirst(2))
+        }
+        return raw
+    }
+
     public init(
         sessionId: String,
         name: String,
@@ -60,4 +76,10 @@ public struct Agent: Codable, Identifiable, Sendable {
         self.subagentCount = subagentCount
         self.paneTitle = paneTitle
     }
+
+    /// Titles that processes set automatically and aren't meaningful to display.
+    private static let ignoredPaneTitles: Set<String> = [
+        "node", "bash", "zsh", "sh", "fish", "python", "python3", "ruby",
+        "bun", "deno", "npx", "tsx",
+    ]
 }

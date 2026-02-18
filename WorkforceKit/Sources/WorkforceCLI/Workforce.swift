@@ -9,6 +9,7 @@ struct Workforce: ParsableCommand {
         abstract: "CLI companion for Workforce",
         subcommands: [
             RunCommand.self,
+            SessionStartCommand.self,
             PreToolUseCommand.self,
             PostToolUseCommand.self,
             PostToolUseFailureCommand.self,
@@ -20,6 +21,6 @@ struct Workforce: ParsableCommand {
             InstallHooksCommand.self,
             UninstallHooksCommand.self,
         ],
-        defaultSubcommand: nil
+        defaultSubcommand: RunCommand.self
     )
 }

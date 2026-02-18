@@ -13,7 +13,7 @@ struct WorkforceApp: App {
 
     var body: some Scene {
         Window("Workforce", id: "main") {
-            MainWindowView(store: agentStore)
+            MainWindowView(store: agentStore, eventLog: eventLog)
         }
         .commands {
             CommandGroup(after: .windowArrangement) {

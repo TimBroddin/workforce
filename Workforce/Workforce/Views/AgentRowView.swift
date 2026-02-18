@@ -5,7 +5,7 @@ struct AgentRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(displayName)
+            Text(agent.displayTitle)
                 .font(.system(.body, design: .default))
                 .lineLimit(1)
 
@@ -42,28 +42,6 @@ struct AgentRowView: View {
         .padding(.vertical, 6)
         .padding(.leading, 28)
         .padding(.trailing, 12)
-    }
-
-    /// Titles that processes set automatically and aren't meaningful to display.
-    private static let ignoredPaneTitles: Set<String> = [
-        "node", "bash", "zsh", "sh", "fish", "python", "python3", "ruby",
-        "bun", "deno", "npx", "tsx",
-    ]
-
-    private var displayName: String {
-        let title: String? = agent.paneTitle.flatMap { title in
-            let trimmed = title.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { return nil }
-            if Self.ignoredPaneTitles.contains(trimmed.lowercased()) { return nil }
-            // Ignore hostname-like titles (no spaces, contains a dot or matches common patterns)
-            if !trimmed.contains(" "), trimmed.contains(".") { return nil }
-            return trimmed
-        }
-        let raw = title ?? agent.agentType.capitalized
-        if raw.count > 2, raw.hasPrefix("_ ") {
-            return String(raw.dropFirst(2))
-        }
-        return raw
     }
 
     private var statusLabel: String {

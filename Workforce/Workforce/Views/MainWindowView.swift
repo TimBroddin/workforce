@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct MainWindowView: View {
     let store: AgentStore
+    let eventLog: EventLog
     @State private var selectedAgentId: String?
     @State private var collapsedCwds: Set<String> = []
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
@@ -10,11 +12,29 @@ struct MainWindowView: View {
     @State private var hasCodex = false
     @State private var hasOpenCode = false
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
+    @AppStorage("followAgent") private var followAgent = false
     @State private var showSetupWizard = false
+    @State private var showRecentEvents = false
+    @State private var previousStatuses: [String: AgentStatus] = [:]
+    @AppStorage("sidebarFolders") private var sidebarFoldersRaw = ""
 
     /// Unique cwds from all active agents, sorted alphabetically
-    private var cwds: [String] {
+    private var activeCwds: [String] {
         Array(Set(store.sortedAgents.map(\.cwd))).sorted()
+    }
+
+    /// User-pinned folders in the sidebar.
+    private var pinnedCwds: [String] {
+        sidebarFoldersRaw
+            .split(separator: "\n")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+            .sorted()
+    }
+
+    /// Combined folders shown in the sidebar (pinned + active), sorted and de-duped.
+    private var sidebarCwds: [String] {
+        Array(Set(activeCwds + pinnedCwds)).sorted()
     }
 
     /// Agents grouped by cwd
@@ -33,6 +53,26 @@ struct MainWindowView: View {
     /// Whether an agent is the currently selected one (matches visual highlight to actual selection).
     private func isSelected(_ agent: Agent) -> Bool {
         selectedAgent?.sessionId == agent.sessionId
+    }
+
+    private var recentEvents: [EventLogEntry] {
+        guard let sessionId = selectedAgent?.sessionId else { return [] }
+        return Array(
+            eventLog.entries
+                .reversed()
+                .filter { $0.message?.sessionId == sessionId }
+                .prefix(20)
+        )
+    }
+
+    private var selectedTmuxSession: String? {
+        selectedAgent?.tmuxSession
+    }
+
+    private var statusSnapshots: [StatusSnapshot] {
+        store.sortedAgents
+            .map { StatusSnapshot(id: $0.sessionId, status: $0.status, lastActivityAt: $0.lastActivityAt) }
+            .sorted { $0.id < $1.id }
     }
 
     var body: some View {
@@ -69,7 +109,7 @@ struct MainWindowView: View {
             }
         } message: {
             if let agent = agentToDelete {
-                Text("This will kill the tmux session for \"\(agent.name)\" and remove it from the list.")
+                Text("This will kill the tmux session for \"\(agent.displayTitle)\" and remove it from the list.")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusAgent)) { notification in
@@ -86,6 +126,26 @@ struct MainWindowView: View {
             if let selectedAgentId, store.agents[selectedAgentId] == nil {
                 self.selectedAgentId = nil
             }
+        }
+        .onChange(of: statusSnapshots) { _, snapshots in
+            guard followAgent else {
+                previousStatuses = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.status) })
+                return
+            }
+
+            let waiting = snapshots
+                .filter { snapshot in
+                    let was = previousStatuses[snapshot.id]
+                    return (snapshot.status == .waitingForInput || snapshot.status == .waitingForPermission)
+                        && was != snapshot.status
+                }
+                .max { $0.lastActivityAt < $1.lastActivityAt }
+
+            if let waiting {
+                selectedAgentId = waiting.id
+            }
+
+            previousStatuses = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.status) })
         }
         .task {
             while !Task.isCancelled {
@@ -110,7 +170,82 @@ struct MainWindowView: View {
         .sheet(isPresented: $showSetupWizard) {
             SetupWizardView(isPresented: $showSetupWizard)
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .automatic) {
+                if let session = selectedTmuxSession {
+                    Button {
+                        AppLauncher.runTmuxCommand(session: session, args: ["split-window", "-h"])
+                    }
+                    label: {
+                        Label("Split H", systemImage: "rectangle.split.2x1")
+                    }
+                    .help("Split horizontally")
+
+                    Button {
+                        AppLauncher.runTmuxCommand(session: session, args: ["split-window", "-v"])
+                    }
+                    label: {
+                        Label("Split V", systemImage: "rectangle.split.1x2")
+                    }
+                    .help("Split vertically")
+
+                    Button {
+                        AppLauncher.runTmuxCommand(session: session, args: ["kill-pane"])
+                    }
+                    label: {
+                        Label("Close Pane", systemImage: "xmark.square")
+                    }
+                    .help("Close pane")
+                }
+            }
+
+            ToolbarItemGroup(placement: .automatic) {
+                if let session = selectedTmuxSession {
+                    Button {
+                        AppLauncher.sendTmuxInput(session: session, input: "/clear")
+                    }
+                    label: {
+                        Label("/clear", systemImage: "eraser")
+                    }
+                    .help("Send /clear to Claude Code")
+
+                    Button {
+                        AppLauncher.sendTmuxInput(session: session, input: "/compact")
+                    }
+                    label: {
+                        Label("/compact", systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+                    .help("Send /compact to Claude Code")
+                }
+            }
+
+            ToolbarItemGroup(placement: .automatic) {
+                Toggle(isOn: $followAgent) {
+                    Label("Follow Agent", systemImage: "scope")
+                }
+                .help("Automatically select agents when they start waiting")
+
+                Button {
+                    showRecentEvents.toggle()
+                } label: {
+                    Label("Recent Events", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                }
+                .help("Show recent events for the selected agent")
+                .popover(isPresented: $showRecentEvents, arrowEdge: .bottom) {
+                    recentEventsPopover
+                }
+            }
+        }
         .onAppear {
+            switch HookInstaller.cliVersionStatus() {
+            case .needsUpdate:
+                showSetupWizard = true
+            case .upToDate, .notInstalled:
+                break
+            }
+            previousStatuses = Dictionary(
+                uniqueKeysWithValues: store.sortedAgents.map { ($0.sessionId, $0.status) }
+            )
             if !hasCompletedSetup {
                 showSetupWizard = true
             }
@@ -123,18 +258,42 @@ struct MainWindowView: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        Group {
-            if store.sortedAgents.isEmpty {
-                VStack {
-                    Spacer()
-                    Text("No agents")
+        VStack(spacing: 0) {
+            HStack {
+                Text("Folders")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    addFolderToSidebar()
+                } label: {
+                    Image(systemName: "folder.badge.plus")
                         .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Add folder to sidebar")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            if sidebarCwds.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Text("No folders")
+                        .foregroundStyle(.secondary)
+                    Button("Add Folder") {
+                        addFolderToSidebar()
+                    }
+                    .buttonStyle(.borderedProminent)
                     Spacer()
                 }
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(cwds.enumerated()), id: \.element) { index, cwd in
+                        ForEach(Array(sidebarCwds.enumerated()), id: \.element) { index, cwd in
                             if index > 0 {
                                 Spacer().frame(height: 12)
                             }
@@ -142,42 +301,52 @@ struct MainWindowView: View {
                             sectionHeader(for: cwd)
 
                             if !collapsedCwds.contains(cwd) {
-                                ForEach(agents(for: cwd)) { agent in
-                                    AgentRowView(agent: agent)
-                                        .background(
-                                            isSelected(agent)
-                                                ? Color.accentColor.opacity(0.1)
-                                                : Color.clear
-                                        )
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            selectedAgentId = agent.sessionId
-                                        }
-                                        .contextMenu {
-                                            if let tmux = agent.tmuxSession {
-                                                Button("Open in Terminal") {
-                                                    let terminal = SupportedTerminal(rawValue: defaultTerminal) ?? .terminal
-                                                    AppLauncher.openInTerminal(tmuxSession: tmux, terminal: terminal)
+                                let cwdAgents = agents(for: cwd)
+                                if cwdAgents.isEmpty {
+                                    Text("No running agents")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                } else {
+                                    ForEach(cwdAgents) { agent in
+                                        AgentRowView(agent: agent)
+                                            .background(
+                                                isSelected(agent)
+                                                    ? Color.accentColor.opacity(0.1)
+                                                    : Color.clear
+                                            )
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                selectedAgentId = agent.sessionId
+                                            }
+                                            .contextMenu {
+                                                if let tmux = agent.tmuxSession {
+                                                    Button("Open in Terminal") {
+                                                        let terminal = SupportedTerminal(rawValue: defaultTerminal) ?? .terminal
+                                                        AppLauncher.openInTerminal(tmuxSession: tmux, terminal: terminal)
+                                                    }
+                                                    Button("Copy tmux Command") {
+                                                        NSPasteboard.general.clearContents()
+                                                        NSPasteboard.general.setString(
+                                                            AppLauncher.tmuxAttachCommand(session: tmux),
+                                                            forType: .string
+                                                        )
+                                                    }
                                                 }
-                                                Button("Copy tmux Command") {
-                                                    NSPasteboard.general.clearContents()
-                                                    NSPasteboard.general.setString(
-                                                        AppLauncher.tmuxAttachCommand(session: tmux),
-                                                        forType: .string
-                                                    )
+
+                                                Divider()
+
+                                                Button("Close") {
+                                                    store.removeAgent(agent.sessionId)
+                                                }
+
+                                                Button("Delete...", role: .destructive) {
+                                                    agentToDelete = agent
                                                 }
                                             }
-
-                                            Divider()
-
-                                            Button("Close") {
-                                                store.removeAgent(agent.sessionId)
-                                            }
-
-                                            Button("Delete...", role: .destructive) {
-                                                agentToDelete = agent
-                                            }
-                                        }
+                                    }
                                 }
                             }
                         }
@@ -258,6 +427,12 @@ struct MainWindowView: View {
             Button("Open in Finder") {
                 AppLauncher.openInFinder(path: cwd)
             }
+            if pinnedCwds.contains(cwd) {
+                Divider()
+                Button("Remove from Sidebar") {
+                    removePinnedFolder(cwd)
+                }
+            }
         }
     }
 
@@ -267,13 +442,9 @@ struct MainWindowView: View {
         Group {
             if let agent = selectedAgent {
                 if let tmuxSession = agent.tmuxSession {
-                    VStack(spacing: 0) {
-                        tmuxToolbar(session: tmuxSession)
-                        Divider()
-                        TerminalRepresentable(sessionName: tmuxSession)
-                            .id(agent.sessionId)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    TerminalRepresentable(sessionName: tmuxSession)
+                        .id(agent.sessionId)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "terminal")
@@ -303,40 +474,6 @@ struct MainWindowView: View {
         }
     }
 
-    // MARK: - Tmux Toolbar
-
-    private func tmuxToolbar(session: String) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                AppLauncher.runTmuxCommand(session: session, args: ["split-window", "-h"])
-            } label: {
-                Label("Split H", systemImage: "rectangle.split.2x1")
-            }
-            .help("Split Horizontally")
-
-            Button {
-                AppLauncher.runTmuxCommand(session: session, args: ["split-window", "-v"])
-            } label: {
-                Label("Split V", systemImage: "rectangle.split.1x2")
-            }
-            .help("Split Vertically")
-
-            Button {
-                AppLauncher.runTmuxCommand(session: session, args: ["kill-pane"])
-            } label: {
-                Label("Close Pane", systemImage: "xmark.square")
-            }
-            .help("Close Pane")
-
-            Spacer()
-        }
-        .buttonStyle(.borderless)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-    }
-
     // MARK: - Footer
 
     private var footer: some View {
@@ -344,8 +481,6 @@ struct MainWindowView: View {
             Text("\(store.agents.count) agent\(store.agents.count == 1 ? "" : "s")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer()
-            HookStatusView()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -359,7 +494,106 @@ struct MainWindowView: View {
         return path
     }
 
+    private var recentEventsPopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let agent = selectedAgent {
+                Text("Recent events for \(agent.displayTitle)")
+                    .font(.headline)
+            } else {
+                Text("No agent selected")
+                    .font(.headline)
+            }
+
+            if recentEvents.isEmpty {
+                Text("No recent events")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(recentEvents) { entry in
+                            HStack(alignment: .top, spacing: 8) {
+                                if let message = entry.message {
+                                    Circle()
+                                        .fill(message.type.badgeColor)
+                                        .frame(width: 8, height: 8)
+                                        .padding(.top, 4)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(eventTitle(for: entry))
+                                        .font(.caption.weight(.semibold))
+                                    Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 260)
+            }
+        }
+        .padding(12)
+        .frame(width: 340)
+    }
+
+    private func eventTitle(for entry: EventLogEntry) -> String {
+        guard let message = entry.message else {
+            return entry.error ?? "Invalid event"
+        }
+        switch message.type {
+        case .updateTool:
+            return "Tool: \(message.toolName ?? "unknown")"
+        case .updateStatus:
+            return "Status: \(statusLabel(message.status) ?? "updated")"
+        case .notification:
+            return "Notification: \(message.notificationType ?? "event")"
+        default:
+            return message.type.rawValue
+        }
+    }
+
     private static func isCommandAvailable(_ command: String) -> Bool {
         HookInstaller.isCommandAvailable(command)
+    }
+
+    private func addFolderToSidebar() {
+        let panel = NSOpenPanel()
+        panel.prompt = "Add Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+
+        if panel.runModal() == .OK, let url = panel.url {
+            var updated = Set(pinnedCwds)
+            updated.insert(url.path)
+            sidebarFoldersRaw = updated.sorted().joined(separator: "\n")
+        }
+    }
+
+    private func removePinnedFolder(_ cwd: String) {
+        var updated = Set(pinnedCwds)
+        updated.remove(cwd)
+        sidebarFoldersRaw = updated.sorted().joined(separator: "\n")
+    }
+
+    private func statusLabel(_ status: AgentStatus?) -> String? {
+        guard let status else { return nil }
+        switch status {
+        case .active: return "Active"
+        case .idle: return "Idle"
+        case .waitingForInput: return "Waiting for Input"
+        case .waitingForPermission: return "Waiting for Permission"
+        case .stopped: return "Stopped"
+        }
+    }
+
+    private struct StatusSnapshot: Equatable {
+        let id: String
+        let status: AgentStatus
+        let lastActivityAt: Date
     }
 }

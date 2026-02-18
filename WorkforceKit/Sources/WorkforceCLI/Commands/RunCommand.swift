@@ -48,17 +48,17 @@ struct RunCommand: ParsableCommand {
         )
         SocketClient.send(message)
 
-        // Build shell command string for tmux
-        let shellCommand = ([agentPath] + agentArgs)
-            .map { $0.contains(" ") ? "'\($0)'" : $0 }
-            .joined(separator: " ")
-
-        // Launch via shell so tmux gets a proper invocation.
+        // Launch tmux directly with argv components to avoid shell escaping issues.
         // Set WORKFORCE_SESSION so hooks running inside this tmux session
         // can map Claude's session_id back to the workforce agent.
         let tmux = Process()
-        tmux.executableURL = URL(fileURLWithPath: "/bin/sh")
-        tmux.arguments = ["-c", "\(tmuxPath) new-session -s \(sessionName) -e WORKFORCE_SESSION=\(sessionName) '\(shellCommand)'"]
+        tmux.executableURL = URL(fileURLWithPath: tmuxPath)
+        tmux.arguments = [
+            "new-session",
+            "-s", sessionName,
+            "-e", "WORKFORCE_SESSION=\(sessionName)",
+            agentPath,
+        ] + agentArgs
         tmux.standardInput = FileHandle.standardInput
         tmux.standardOutput = FileHandle.standardOutput
         tmux.standardError = FileHandle.standardError
