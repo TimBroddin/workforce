@@ -38,16 +38,16 @@ Grab the latest release from the [Releases](https://github.com/timbroddin/workfo
 ## Usage
 
 1. Launch the Workforce app — the first-run wizard will guide you through installing the CLI binary and Claude Code hooks
-2. Use `workforce run` to start agents — they'll appear in the dashboard automatically
+2. Use `workforce` to start agents — they'll appear in the dashboard automatically
 3. Monitor agent status, view terminals, and receive notifications when agents need input
 
 ### CLI Commands
 
 ```sh
-workforce run [prompt]              # Launch Claude Code in tmux (default)
-workforce run --agent codex [prompt] # Launch a different agent (codex, opencode, ...)
-workforce install-hooks      # Register Claude hooks + OpenCode plugin
-workforce uninstall-hooks    # Remove Claude hooks + OpenCode plugin
+workforce                             # Launch Claude Code in tmux (default)
+workforce --agent codex               # Launch a different agent (codex, opencode, ...)
+workforce install-hooks               # Register Claude hooks + OpenCode plugin
+workforce uninstall-hooks             # Remove Claude hooks + OpenCode plugin
 ```
 
 ## How It Works
