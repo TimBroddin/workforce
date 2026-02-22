@@ -58,7 +58,6 @@ enum SocketClient {
                     }
                     sent += n
                 }
-                fputs("[workforce] sent \(sent) bytes to \(socketPath)\n", stderr)
             }
 
             // Graceful shutdown: send FIN so the NWConnection server sees

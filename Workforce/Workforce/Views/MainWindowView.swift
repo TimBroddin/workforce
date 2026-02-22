@@ -5,6 +5,7 @@ struct MainWindowView: View {
     let store: AgentStore
     let eventLog: EventLog
     @State private var selectedAgentId: String?
+    @State private var selectedFolderCwd: String?
     @State private var collapsedCwds: Set<String> = []
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
@@ -13,6 +14,7 @@ struct MainWindowView: View {
     @State private var hasOpenCode = false
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
     @AppStorage("followAgent") private var followAgent = false
+    @AppStorage("showCosts") private var showCosts = true
     @State private var showSetupWizard = false
     @State private var showRecentEvents = false
     @State private var previousStatuses: [String: AgentStatus] = [:]
@@ -82,7 +84,11 @@ struct MainWindowView: View {
                 sidebar
                     .frame(minWidth: 200, idealWidth: 260, maxWidth: 350)
 
-                terminalPane
+                if let folderCwd = selectedFolderCwd, selectedAgentId == nil {
+                    ProjectDetailView(cwd: folderCwd, store: store, eventLog: eventLog)
+                } else {
+                    terminalPane
+                }
             }
 
             Divider()
@@ -115,6 +121,7 @@ struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusAgent)) { notification in
             if let sessionId = notification.userInfo?["sessionId"] as? String {
                 selectedAgentId = sessionId
+                selectedFolderCwd = nil
                 NSApp.activate()
                 for window in NSApp.windows {
                     window.makeKeyAndOrderFront(nil)
@@ -143,6 +150,7 @@ struct MainWindowView: View {
 
             if let waiting {
                 selectedAgentId = waiting.id
+                selectedFolderCwd = nil
             }
 
             previousStatuses = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.status) })
@@ -224,6 +232,11 @@ struct MainWindowView: View {
                     Label("Follow Agent", systemImage: "scope")
                 }
                 .help("Automatically select agents when they start waiting")
+
+                Toggle(isOn: $showCosts) {
+                    Label("Show Costs", systemImage: "dollarsign.circle")
+                }
+                .help("Show estimated token costs")
 
                 Button {
                     showRecentEvents.toggle()
@@ -320,6 +333,7 @@ struct MainWindowView: View {
                                             .contentShape(Rectangle())
                                             .onTapGesture {
                                                 selectedAgentId = agent.sessionId
+                                                selectedFolderCwd = nil
                                             }
                                             .contextMenu {
                                                 if let tmux = agent.tmuxSession {
@@ -358,60 +372,86 @@ struct MainWindowView: View {
 
     private func sectionHeader(for cwd: String) -> some View {
         HStack(spacing: 6) {
+            // Chevron: toggles collapse
             Image(systemName: collapsedCwds.contains(cwd) ? "chevron.right" : "chevron.down")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .frame(width: 10)
+                .contentShape(Rectangle().inset(by: -4))
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        if collapsedCwds.contains(cwd) {
+                            collapsedCwds.remove(cwd)
+                        } else {
+                            collapsedCwds.insert(cwd)
+                        }
+                    }
+                }
 
-            Image(systemName: "folder.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // Folder name: selects the folder detail view
+            HStack(spacing: 6) {
+                Image(systemName: "folder.fill")
+                    .font(.caption)
+                    .foregroundStyle(selectedFolderCwd == cwd && selectedAgentId == nil ? .primary : .secondary)
 
-            Text(abbreviatePath(cwd))
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+                Text(abbreviatePath(cwd))
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(selectedFolderCwd == cwd && selectedAgentId == nil ? .primary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedAgentId = nil
+                selectedFolderCwd = cwd
+            }
 
             Spacer()
 
-            let folderCost = agents(for: cwd).reduce(0.0) { total, agent in
-                total + CostCalculator.estimateCost(
-                    model: agent.model,
-                    inputTokens: agent.totalInputTokens,
-                    outputTokens: agent.totalOutputTokens,
-                    cacheCreationTokens: agent.totalCacheCreationTokens,
-                    cacheReadTokens: agent.totalCacheReadTokens
-                )
-            }
-            if folderCost > 0 {
-                Text(CostCalculator.formatCost(folderCost))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
+            if showCosts {
+                let folderCost = agents(for: cwd).reduce(0.0) { total, agent in
+                    total + CostCalculator.estimateCost(
+                        model: agent.model,
+                        inputTokens: agent.totalInputTokens,
+                        outputTokens: agent.totalOutputTokens,
+                        cacheCreationTokens: agent.totalCacheCreationTokens,
+                        cacheReadTokens: agent.totalCacheReadTokens
+                    )
+                }
+                if folderCost > 0 {
+                    Text(CostCalculator.formatCost(folderCost))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
             }
 
             Menu {
                 Button("Claude") {
                     selectedAgentId = store.spawnAgent(cwd: cwd, agentType: "claude")
+                    selectedFolderCwd = nil
                 }
                 Button("Claude (--dangerously-skip-permissions)") {
                     selectedAgentId = store.spawnAgent(cwd: cwd, agentType: "claude --dangerously-skip-permissions")
+                    selectedFolderCwd = nil
                 }
                 if hasCodex {
                     Button("Codex") {
                         selectedAgentId = store.spawnAgent(cwd: cwd, agentType: "codex")
+                        selectedFolderCwd = nil
                     }
                 }
                 if hasOpenCode {
                     Button("OpenCode") {
                         selectedAgentId = store.spawnAgent(cwd: cwd, agentType: "opencode")
+                        selectedFolderCwd = nil
                     }
                 }
                 Divider()
                 Button("Bash") {
                     selectedAgentId = store.spawnAgent(cwd: cwd, agentType: "bash")
+                    selectedFolderCwd = nil
                 }
             } label: {
                 Image(systemName: "plus")
@@ -424,17 +464,11 @@ struct MainWindowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                if collapsedCwds.contains(cwd) {
-                    collapsedCwds.remove(cwd)
-                } else {
-                    collapsedCwds.insert(cwd)
-                }
-            }
-        }
+        .background(
+            selectedFolderCwd == cwd && selectedAgentId == nil
+                ? Color.accentColor.opacity(0.08)
+                : Color(nsColor: .controlBackgroundColor).opacity(0.5)
+        )
         .contextMenu {
             let ide = SupportedIDE(rawValue: defaultIDE) ?? .vscode
             Button("Open in \(ide.rawValue)") {
@@ -494,26 +528,28 @@ struct MainWindowView: View {
 
     private var footer: some View {
         HStack {
-            let totalCost = store.sortedAgents.reduce(0.0) { total, agent in
-                total + CostCalculator.estimateCost(
-                    model: agent.model,
-                    inputTokens: agent.totalInputTokens,
-                    outputTokens: agent.totalOutputTokens,
-                    cacheCreationTokens: agent.totalCacheCreationTokens,
-                    cacheReadTokens: agent.totalCacheReadTokens
-                )
-            }
             Text("\(store.agents.count) agent\(store.agents.count == 1 ? "" : "s")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if totalCost > 0 {
-                Text("·")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Text(CostCalculator.formatCost(totalCost))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+            if showCosts {
+                let totalCost = store.sortedAgents.reduce(0.0) { total, agent in
+                    total + CostCalculator.estimateCost(
+                        model: agent.model,
+                        inputTokens: agent.totalInputTokens,
+                        outputTokens: agent.totalOutputTokens,
+                        cacheCreationTokens: agent.totalCacheCreationTokens,
+                        cacheReadTokens: agent.totalCacheReadTokens
+                    )
+                }
+                if totalCost > 0 {
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Text(CostCalculator.formatCost(totalCost))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
             }
         }
         .padding(.horizontal, 12)

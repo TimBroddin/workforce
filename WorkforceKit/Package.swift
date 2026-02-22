@@ -21,6 +21,9 @@ let package = Package(
             dependencies: [
                 "WorkforceKit",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            linkerSettings: [
+                .linkedLibrary("ncurses"),
             ]
         ),
         .testTarget(

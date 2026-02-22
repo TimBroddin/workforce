@@ -178,6 +178,8 @@ struct EventViewerWindow: View {
             return message.agentType ?? ""
         case .deregister:
             return ""
+        case .updateTokens:
+            return ""
         }
     }
 

@@ -6,6 +6,7 @@ struct ProjectDetailView: View {
     let eventLog: EventLog
     @State private var selectedTab = 0
     @State private var gitInfo: GitInfo?
+    @AppStorage("showCosts") private var showCosts = true
 
     private var projectAgents: [Agent] {
         store.sortedAgents.filter { $0.cwd == cwd }
@@ -15,56 +16,145 @@ struct ProjectDetailView: View {
         URL(fileURLWithPath: cwd).lastPathComponent
     }
 
+    private var abbreviatedPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if cwd.hasPrefix(home) {
+            return "~" + cwd.dropFirst(home.count)
+        }
+        return cwd
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Image(systemName: "folder.fill")
-                    .foregroundStyle(.secondary)
-                Text(projectName)
-                    .font(.headline)
-                Spacer()
-                Text("\(projectAgents.count) agent\(projectAgents.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
-
+            header
             Divider()
-
-            // Tab picker
-            Picker("", selection: $selectedTab) {
-                Text("Stats").tag(0)
-                Text("Git").tag(1)
-                Text("Activity").tag(2)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            // Tab content
-            switch selectedTab {
-            case 0:
-                statsTab
-            case 1:
-                gitTab
-            case 2:
-                activityTab
-            default:
-                EmptyView()
-            }
-
-            Spacer()
+            tabBar
+            Divider()
+            tabContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task {
-            await refreshGitInfo()
-        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .task { await refreshGitInfo() }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
                 await refreshGitInfo()
             }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.blue.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.blue)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(projectName)
+                        .font(.title3.weight(.semibold))
+                    Text(abbreviatedPath)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                HStack(spacing: 12) {
+                    statusPill(
+                        count: projectAgents.filter { $0.status == .active }.count,
+                        label: "active",
+                        color: .green
+                    )
+                    statusPill(
+                        count: projectAgents.filter { $0.status == .idle }.count,
+                        label: "idle",
+                        color: .gray
+                    )
+                    statusPill(
+                        count: projectAgents.filter {
+                            $0.status == .waitingForInput || $0.status == .waitingForPermission
+                        }.count,
+                        label: "waiting",
+                        color: .blue
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func statusPill(count: Int, label: String, color: Color) -> some View {
+        Group {
+            if count > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 6, height: 6)
+                    Text("\(count) \(label)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(title: "Stats", icon: "chart.bar.fill", tag: 0)
+            tabButton(title: "Git", icon: "arrow.triangle.branch", tag: 1)
+            tabButton(title: "Activity", icon: "bolt.fill", tag: 2)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    private func tabButton(title: String, icon: String, tag: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedTab = tag
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(title)
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(selectedTab == tag ? .primary : .secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(
+                selectedTab == tag
+                    ? Color.accentColor.opacity(0.1)
+                    : Color.clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Tab Content
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case 0: statsTab
+        case 1: gitTab
+        case 2: activityTab
+        default: EmptyView()
         }
     }
 
@@ -75,6 +165,8 @@ struct ProjectDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 let totalInput = projectAgents.reduce(0) { $0 + $1.totalInputTokens }
                 let totalOutput = projectAgents.reduce(0) { $0 + $1.totalOutputTokens }
+                let totalCacheCreate = projectAgents.reduce(0) { $0 + $1.totalCacheCreationTokens }
+                let totalCacheRead = projectAgents.reduce(0) { $0 + $1.totalCacheReadTokens }
                 let totalCost = projectAgents.reduce(0.0) { total, agent in
                     total + CostCalculator.estimateCost(
                         model: agent.model,
@@ -85,55 +177,102 @@ struct ProjectDetailView: View {
                     )
                 }
 
-                HStack(spacing: 16) {
-                    StatCard(title: "Total Tokens", value: CostCalculator.formatTokens(totalInput + totalOutput))
-                    StatCard(title: "Estimated Cost", value: CostCalculator.formatCost(totalCost))
-                    StatCard(title: "Active", value: "\(projectAgents.filter { $0.status == .active }.count)")
+                // Summary cards
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    StatCard(
+                        icon: "arrow.down.circle.fill",
+                        iconColor: .blue,
+                        title: "Input",
+                        value: CostCalculator.formatTokens(totalInput)
+                    )
+                    StatCard(
+                        icon: "arrow.up.circle.fill",
+                        iconColor: .purple,
+                        title: "Output",
+                        value: CostCalculator.formatTokens(totalOutput)
+                    )
+                    if totalCacheCreate + totalCacheRead > 0 {
+                        StatCard(
+                            icon: "memorychip.fill",
+                            iconColor: .orange,
+                            title: "Cache",
+                            value: CostCalculator.formatTokens(totalCacheCreate + totalCacheRead)
+                        )
+                    }
+                    if showCosts {
+                        StatCard(
+                            icon: "dollarsign.circle.fill",
+                            iconColor: .green,
+                            title: "Cost",
+                            value: totalCost > 0 ? CostCalculator.formatCost(totalCost) : "—"
+                        )
+                    }
                 }
 
+                // Per-agent breakdown
                 if !projectAgents.isEmpty {
-                    Text("Per Agent")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    sectionLabel("Agents")
 
-                    ForEach(projectAgents) { agent in
-                        HStack {
-                            Text(agent.displayTitle)
-                                .font(.body)
-                            if let model = agent.model {
-                                Text(model)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(.quaternary)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                            }
-                            Spacer()
-                            let tokens = agent.totalInputTokens + agent.totalOutputTokens
-                            if tokens > 0 {
-                                Text(CostCalculator.formatTokens(tokens))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                                let cost = CostCalculator.estimateCost(
-                                    model: agent.model,
-                                    inputTokens: agent.totalInputTokens,
-                                    outputTokens: agent.totalOutputTokens,
-                                    cacheCreationTokens: agent.totalCacheCreationTokens,
-                                    cacheReadTokens: agent.totalCacheReadTokens
-                                )
-                                Text(CostCalculator.formatCost(cost))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
+                    VStack(spacing: 1) {
+                        ForEach(projectAgents) { agent in
+                            agentStatsRow(agent)
                         }
-                        .padding(.vertical, 4)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private func agentStatsRow(_ agent: Agent) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(agentStatusColor(agent.status))
+                .frame(width: 7, height: 7)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(agent.displayTitle)
+                    .font(.callout.weight(.medium))
+                HStack(spacing: 6) {
+                    if let model = agent.model {
+                        Text(model)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Text(agentStatusLabel(agent.status))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            let tokens = agent.totalInputTokens + agent.totalOutputTokens
+            if tokens > 0 {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(CostCalculator.formatTokens(tokens))
+                        .font(.caption.weight(.medium))
+                        .monospacedDigit()
+                    if showCosts {
+                        let cost = CostCalculator.estimateCost(
+                            model: agent.model,
+                            inputTokens: agent.totalInputTokens,
+                            outputTokens: agent.totalOutputTokens,
+                            cacheCreationTokens: agent.totalCacheCreationTokens,
+                            cacheReadTokens: agent.totalCacheReadTokens
+                        )
+                        Text(CostCalculator.formatCost(cost))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                     }
                 }
             }
-            .padding()
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
     }
 
     // MARK: - Git Tab
@@ -142,40 +281,81 @@ struct ProjectDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let info = gitInfo {
-                    HStack {
-                        Label(info.branch, systemImage: "arrow.triangle.branch")
-                            .font(.body.weight(.medium))
-                        Spacer()
-                        if info.dirtyFileCount > 0 {
-                            Text("\(info.dirtyFileCount) uncommitted")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
+                    // Branch card
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.purple.opacity(0.12))
+                                .frame(width: 30, height: 30)
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.purple)
                         }
-                    }
 
-                    if !info.recentCommits.isEmpty {
-                        Text("Recent Commits")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        ForEach(info.recentCommits) { commit in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(commit.id)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                Text(commit.message)
-                                    .font(.caption)
-                                    .lineLimit(2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(info.branch)
+                                .font(.callout.weight(.semibold))
+                            if info.dirtyFileCount > 0 {
+                                Text("\(info.dirtyFileCount) uncommitted change\(info.dirtyFileCount == 1 ? "" : "s")")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Text("Clean working tree")
+                                    .font(.caption2)
+                                    .foregroundStyle(.green)
                             }
-                            .padding(.vertical, 2)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    // Commit log
+                    if !info.recentCommits.isEmpty {
+                        sectionLabel("Recent Commits")
+
+                        VStack(spacing: 0) {
+                            ForEach(Array(info.recentCommits.enumerated()), id: \.element.id) { index, commit in
+                                HStack(alignment: .top, spacing: 10) {
+                                    // Timeline
+                                    VStack(spacing: 0) {
+                                        Circle()
+                                            .fill(index == 0 ? Color.accentColor : Color.secondary.opacity(0.3))
+                                            .frame(width: 8, height: 8)
+                                        if index < info.recentCommits.count - 1 {
+                                            Rectangle()
+                                                .fill(.quaternary)
+                                                .frame(width: 1)
+                                        }
+                                    }
+                                    .frame(width: 8)
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(commit.message)
+                                            .font(.callout)
+                                            .lineLimit(2)
+                                        Text(commit.id)
+                                            .font(.system(.caption2, design: .monospaced))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.bottom, 12)
+
+                                    Spacer()
+                                }
+                            }
                         }
                     }
                 } else {
-                    Text("Not a git repository")
-                        .foregroundStyle(.secondary)
+                    emptyState(
+                        icon: "arrow.triangle.branch",
+                        title: "Not a Git Repository",
+                        subtitle: "This folder is not tracked by Git."
+                    )
                 }
             }
-            .padding()
+            .padding(16)
         }
     }
 
@@ -190,57 +370,150 @@ struct ProjectDetailView: View {
         )
 
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if projectEntries.isEmpty {
-                    Text("No recent activity")
-                        .foregroundStyle(.secondary)
-                        .padding()
+                    emptyState(
+                        icon: "bolt.slash",
+                        title: "No Recent Activity",
+                        subtitle: "Events from agents in this project will appear here."
+                    )
+                    .padding(.top, 40)
                 } else {
                     ForEach(projectEntries) { entry in
-                        HStack(alignment: .top, spacing: 8) {
-                            if let message = entry.message {
-                                Circle()
-                                    .fill(message.type.badgeColor)
-                                    .frame(width: 6, height: 6)
-                                    .padding(.top, 5)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let message = entry.message {
-                                    Text(activityTitle(for: message))
-                                        .font(.caption.weight(.medium))
-                                }
-                                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Spacer()
+                        activityRow(entry)
+                        if entry.id != projectEntries.last?.id {
+                            Divider()
+                                .padding(.leading, 36)
                         }
                     }
                 }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
     }
+
+    private func activityRow(_ entry: EventLogEntry) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let message = entry.message {
+                ZStack {
+                    Circle()
+                        .fill(message.type.badgeColor.opacity(0.15))
+                        .frame(width: 24, height: 24)
+                    Image(systemName: activityIcon(for: message.type))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(message.type.badgeColor)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                if let message = entry.message {
+                    Text(activityTitle(for: message))
+                        .font(.callout.weight(.medium))
+                }
+                Text(relativeTime(entry.timestamp))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 6)
+    }
+
+    // MARK: - Shared Components
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .textCase(.uppercase)
+            .tracking(0.5)
+    }
+
+    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.quaternary)
+            Text(title)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    // MARK: - Helpers
 
     private func activityTitle(for message: SocketMessage) -> String {
         switch message.type {
         case .updateTool:
-            return "Tool: \(message.toolName ?? "unknown")"
+            return message.toolName ?? "Tool use"
         case .updateStatus:
             return "Status: \(message.status?.rawValue ?? "updated")"
         case .notification:
-            return "Notification: \(message.notificationType ?? "event")"
+            return message.notificationType == "permission_prompt"
+                ? "Permission requested"
+                : message.notificationType ?? "Notification"
         case .register:
-            return "Agent registered"
+            return "Agent started"
         case .deregister:
-            return "Agent deregistered"
+            return "Agent stopped"
         case .subagentStart:
-            return "Subagent started"
+            return "Subagent spawned"
         case .subagentStop:
-            return "Subagent stopped"
+            return "Subagent finished"
         case .updateTokens:
-            return "Token update"
+            return "Token usage reported"
         }
+    }
+
+    private func activityIcon(for type: SocketMessageType) -> String {
+        switch type {
+        case .register: "play.fill"
+        case .deregister: "stop.fill"
+        case .updateTool: "wrench.fill"
+        case .updateStatus: "arrow.triangle.2.circlepath"
+        case .notification: "bell.fill"
+        case .subagentStart: "cpu"
+        case .subagentStop: "cpu"
+        case .updateTokens: "number"
+        }
+    }
+
+    private func agentStatusColor(_ status: AgentStatus) -> Color {
+        switch status {
+        case .active: .green
+        case .waitingForInput, .waitingForPermission: .blue
+        case .idle: .gray
+        case .stopped: .gray.opacity(0.4)
+        }
+    }
+
+    private func agentStatusLabel(_ status: AgentStatus) -> String {
+        switch status {
+        case .active: "Working"
+        case .waitingForInput: "Waiting for input"
+        case .waitingForPermission: "Waiting for permission"
+        case .idle: "Idle"
+        case .stopped: "Stopped"
+        }
+    }
+
+    private func relativeTime(_ date: Date) -> String {
+        let seconds = Int(-date.timeIntervalSinceNow)
+        if seconds < 5 { return "just now" }
+        if seconds < 60 { return "\(seconds)s ago" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     @MainActor
@@ -249,22 +522,37 @@ struct ProjectDetailView: View {
     }
 }
 
+// MARK: - Stat Card
+
 private struct StatCard: View {
+    let icon: String
+    let iconColor: Color
     let title: String
     let value: String
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.title2.weight(.semibold))
-                .monospacedDigit()
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(iconColor)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
+                Text(value)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+            }
+
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(.quaternary.opacity(0.5))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

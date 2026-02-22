@@ -20,6 +20,9 @@ struct Workforce: ParsableCommand {
             SubagentStopCommand.self,
             InstallHooksCommand.self,
             UninstallHooksCommand.self,
+            ListCommand.self,
+            AttachCommand.self,
+            TUICommand.self,
         ],
         defaultSubcommand: RunCommand.self
     )

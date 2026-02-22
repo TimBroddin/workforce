@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension Notification.Name {
@@ -9,6 +10,7 @@ struct WorkforceApp: App {
     @State private var agentStore = AgentStore()
     @State private var eventLog = EventLog()
     @State private var socketServer: SocketServer?
+    @State private var httpServer: HTTPServer?
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
@@ -42,6 +44,7 @@ struct WorkforceApp: App {
         _ = NerdFontRegistration.registered
 
         let store = AgentStore()
+        store.load()
         store.discoverTmuxSessions()
         _agentStore = State(initialValue: store)
 
@@ -51,6 +54,19 @@ struct WorkforceApp: App {
         let server = SocketServer(store: store, eventLog: log)
         _socketServer = State(initialValue: server)
         try? server.start()
+
+        let http = HTTPServer(store: store)
+        _httpServer = State(initialValue: http)
+        try? http.start()
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            http.stop()
+        }
+
         NotificationManager.shared.requestPermission()
     }
 }

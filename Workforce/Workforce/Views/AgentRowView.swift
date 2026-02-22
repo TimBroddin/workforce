@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AgentRowView: View {
     let agent: Agent
+    @AppStorage("showCosts") private var showCosts = true
 
     var body: some View {
         HStack(spacing: 8) {
@@ -36,7 +37,7 @@ struct AgentRowView: View {
 
             Spacer()
 
-            if agent.totalInputTokens > 0 || agent.totalOutputTokens > 0 {
+            if showCosts, agent.totalInputTokens > 0 || agent.totalOutputTokens > 0 {
                 let cost = CostCalculator.estimateCost(
                     model: agent.model,
                     inputTokens: agent.totalInputTokens,
