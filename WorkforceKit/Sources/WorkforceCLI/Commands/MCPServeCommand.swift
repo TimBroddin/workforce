@@ -18,6 +18,7 @@ struct MCPServeCommand: ParsableCommand {
 
 private final class MCPServer {
     private let sessionId: String
+    private let cwd: String
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -27,6 +28,7 @@ private final class MCPServer {
         } else {
             self.sessionId = "mcp-\(ProcessInfo.processInfo.processIdentifier)"
         }
+        self.cwd = FileManager.default.currentDirectoryPath
         self.encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         self.decoder = JSONDecoder()
@@ -34,7 +36,6 @@ private final class MCPServer {
     }
 
     func run() {
-        // MCP uses newline-delimited JSON-RPC 2.0 over stdio
         while let line = readLine(strippingNewline: true) {
             guard !line.isEmpty else { continue }
             handleMessage(line)
@@ -45,7 +46,7 @@ private final class MCPServer {
         guard let data = line.data(using: .utf8) else { return }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
-        let id = json["id"]  // may be Int, String, or nil (for notifications)
+        let id = json["id"]
         let method = json["method"] as? String ?? ""
         let params = json["params"] as? [String: Any] ?? [:]
 
@@ -53,7 +54,6 @@ private final class MCPServer {
         case "initialize":
             handleInitialize(id: id, params: params)
         case "notifications/initialized":
-            // Client acknowledgement — nothing to do
             break
         case "tools/list":
             handleToolsList(id: id)
@@ -78,7 +78,7 @@ private final class MCPServer {
             ],
             "serverInfo": [
                 "name": "workforce",
-                "version": "0.2.0"
+                "version": "0.3.0"
             ]
         ]
         sendResult(id: id, result: result)
@@ -121,8 +121,41 @@ private final class MCPServer {
                 ]
             ],
             [
+                "name": "broadcast_message",
+                "description": "Broadcast a message to all agents. Use scope 'project' to reach all agents working in the same directory (current and future), or 'global' to reach all agents everywhere. Broadcast messages persist and are visible to agents that start after the message was sent.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "message": [
+                            "type": "string",
+                            "description": "The message body to broadcast"
+                        ],
+                        "scope": [
+                            "type": "string",
+                            "enum": ["project", "global"],
+                            "description": "Broadcast scope. 'project' sends to all agents in the same working directory. 'global' sends to all agents everywhere. Defaults to 'project'."
+                        ],
+                        "subject": [
+                            "type": "string",
+                            "description": "Optional subject line"
+                        ],
+                        "type": [
+                            "type": "string",
+                            "enum": ["message", "artifact", "status_update", "work_request", "instruction"],
+                            "description": "Type of message. Defaults to 'message'."
+                        ],
+                        "priority": [
+                            "type": "string",
+                            "enum": ["low", "normal", "high"],
+                            "description": "Message priority. Defaults to 'normal'."
+                        ]
+                    ],
+                    "required": ["message"]
+                ]
+            ],
+            [
                 "name": "read_messages",
-                "description": "Read messages from other agents in your inbox. Returns unread messages by default.",
+                "description": "Read messages from other agents in your inbox, including broadcast messages. Returns unread/unseen messages by default.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -161,6 +194,8 @@ private final class MCPServer {
         switch toolName {
         case "send_message":
             handleSendMessage(id: id, arguments: arguments)
+        case "broadcast_message":
+            handleBroadcastMessage(id: id, arguments: arguments)
         case "read_messages":
             handleReadMessages(id: id, arguments: arguments)
         case "list_agents":
@@ -199,11 +234,10 @@ private final class MCPServer {
         do {
             try Mailbox.deliver(agentMessage)
 
-            // Notify the Workforce app
             SocketClient.send(SocketMessage(
                 type: .agentMessage,
                 sessionId: sessionId,
-                cwd: FileManager.default.currentDirectoryPath,
+                cwd: cwd,
                 messageFrom: sessionId,
                 messageTo: toSession,
                 messageBody: message,
@@ -218,6 +252,57 @@ private final class MCPServer {
         }
     }
 
+    // MARK: - broadcast_message
+
+    private func handleBroadcastMessage(id: Any?, arguments: [String: Any]) {
+        guard let message = arguments["message"] as? String else {
+            sendError(id: id, code: -32602, message: "Missing required parameter: 'message'")
+            return
+        }
+
+        let scope = arguments["scope"] as? String ?? "project"
+        let subject = arguments["subject"] as? String
+        let typeStr = arguments["type"] as? String ?? "message"
+        let priorityStr = arguments["priority"] as? String ?? "normal"
+        let msgType = AgentMessage.MessageType(rawValue: typeStr) ?? .message
+        let msgPriority = AgentMessage.Priority(rawValue: priorityStr) ?? .normal
+
+        let broadcastTo = scope == "global" ? "broadcast:global" : "broadcast:project"
+        let agentMessage = AgentMessage(
+            from: sessionId,
+            to: broadcastTo,
+            type: msgType,
+            priority: msgPriority,
+            subject: subject,
+            body: message
+        )
+
+        do {
+            if scope == "global" {
+                try Mailbox.broadcastGlobal(agentMessage)
+            } else {
+                try Mailbox.broadcastToProject(cwd: cwd, agentMessage)
+            }
+
+            SocketClient.send(SocketMessage(
+                type: .agentMessage,
+                sessionId: sessionId,
+                cwd: cwd,
+                messageFrom: sessionId,
+                messageTo: broadcastTo,
+                messageBody: message,
+                messageSubject: subject,
+                messageType: typeStr,
+                messagePriority: priorityStr
+            ))
+
+            let scopeLabel = scope == "global" ? "all agents globally" : "all agents in project"
+            sendToolResult(id: id, text: "Message broadcast to \(scopeLabel). Current and future agents will see this message.")
+        } catch {
+            sendToolResult(id: id, text: "Failed to broadcast: \(error.localizedDescription)", isError: true)
+        }
+    }
+
     // MARK: - read_messages
 
     private func handleReadMessages(id: Any?, arguments: [String: Any]) {
@@ -225,9 +310,15 @@ private final class MCPServer {
         let markRead = arguments["mark_read"] as? Bool ?? true
 
         do {
-            let messages = all
+            // Direct messages
+            var messages = all
                 ? try Mailbox.readInbox(for: sessionId)
                 : try Mailbox.readUnread(for: sessionId)
+
+            // Broadcast messages (unseen)
+            let broadcasts = (try? Mailbox.readNewBroadcasts(for: sessionId, cwd: cwd)) ?? []
+            messages.append(contentsOf: broadcasts)
+            messages.sort { $0.timestamp < $1.timestamp }
 
             if messages.isEmpty {
                 sendToolResult(id: id, text: all ? "No messages in inbox." : "No unread messages.")
@@ -239,7 +330,8 @@ private final class MCPServer {
                 if index > 0 { output += "\n---\n" }
                 let priorityTag = msg.priority == .high ? " [HIGH PRIORITY]" : ""
                 let typeTag = msg.type != .message ? " [\(msg.type.rawValue)]" : ""
-                output += "From: \(msg.from)\(priorityTag)\(typeTag)\n"
+                let broadcastTag = msg.to.hasPrefix("broadcast:") ? " [broadcast]" : ""
+                output += "From: \(msg.from)\(priorityTag)\(typeTag)\(broadcastTag)\n"
                 output += "Time: \(ISO8601DateFormatter().string(from: msg.timestamp))\n"
                 if let subject = msg.subject {
                     output += "Subject: \(subject)\n"
@@ -250,6 +342,7 @@ private final class MCPServer {
 
             if markRead {
                 try Mailbox.markAllAsRead(for: sessionId)
+                Mailbox.markBroadcastsSeen(sessionId: sessionId, cwd: cwd)
             }
 
             sendToolResult(id: id, text: output)
@@ -276,7 +369,7 @@ private final class MCPServer {
             output += "  Status: \(agent.status.rawValue)\n"
             output += "  CWD: \(agent.cwd)\n"
             output += "  Agent: \(agent.agentType)\n"
-            let unread = Mailbox.unreadCount(for: agent.sessionId)
+            let unread = Mailbox.unreadCountWithBroadcasts(for: agent.sessionId, cwd: agent.cwd)
             if unread > 0 {
                 output += "  Unread messages: \(unread)\n"
             }
@@ -292,18 +385,15 @@ private final class MCPServer {
     private func resolveTarget(_ input: String) -> String {
         let agents = APIClient.fetchAgents() ?? TmuxClient.discoverAgents()
 
-        // Exact match
         if agents.contains(where: { $0.sessionId == input }) {
             return input
         }
 
-        // Partial session ID match
         let partialMatches = agents.filter { $0.sessionId.contains(input) }
         if partialMatches.count == 1 {
             return partialMatches[0].sessionId
         }
 
-        // Title match
         let titleMatches = agents.filter {
             $0.displayTitle.localizedCaseInsensitiveContains(input)
         }
@@ -311,7 +401,6 @@ private final class MCPServer {
             return titleMatches[0].sessionId
         }
 
-        // Fall back to raw input
         return input
     }
 

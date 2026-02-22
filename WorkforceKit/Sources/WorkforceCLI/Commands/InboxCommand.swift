@@ -5,7 +5,7 @@ import WorkforceKit
 struct InboxCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "inbox",
-        abstract: "Read messages from other agents"
+        abstract: "Read messages from other agents (direct + broadcasts)"
     )
 
     @Flag(name: .long, help: "Show all messages (including read)")
@@ -17,14 +17,29 @@ struct InboxCommand: ParsableCommand {
     @Flag(name: .long, help: "Mark all messages as read after displaying")
     var markRead: Bool = false
 
+    @Flag(name: .long, help: "Only show direct messages (skip broadcasts)")
+    var directOnly: Bool = false
+
     @Option(name: .long, help: "Session ID to check inbox for (defaults to current session)")
     var session: String?
 
     func run() throws {
         let sessionId = session ?? resolveCurrentSession()
-        let messages = all
+        let cwd = FileManager.default.currentDirectoryPath
+
+        // Direct messages
+        var messages = all
             ? try Mailbox.readInbox(for: sessionId)
             : try Mailbox.readUnread(for: sessionId)
+
+        // Broadcast messages (unseen)
+        if !directOnly {
+            let broadcasts = (try? Mailbox.readNewBroadcasts(for: sessionId, cwd: cwd)) ?? []
+            messages.append(contentsOf: broadcasts)
+        }
+
+        // Sort combined by timestamp
+        messages.sort { $0.timestamp < $1.timestamp }
 
         if messages.isEmpty {
             if !json {
@@ -47,6 +62,7 @@ struct InboxCommand: ParsableCommand {
 
         if markRead {
             try Mailbox.markAllAsRead(for: sessionId)
+            Mailbox.markBroadcastsSeen(sessionId: sessionId, cwd: cwd)
         }
     }
 
@@ -61,8 +77,9 @@ struct InboxCommand: ParsableCommand {
             let priorityTag = msg.priority == .high ? " [HIGH]" : (msg.priority == .low ? " [low]" : "")
             let statusTag = msg.status == .unread ? " (unread)" : ""
             let typeTag = msg.type != .message ? " [\(msg.type.rawValue)]" : ""
+            let broadcastTag = msg.to.hasPrefix("broadcast:") ? " [broadcast]" : ""
 
-            print("From: \(msg.from)\(priorityTag)\(typeTag)\(statusTag)")
+            print("From: \(msg.from)\(priorityTag)\(typeTag)\(broadcastTag)\(statusTag)")
             print("Time: \(dateFormatter.string(from: msg.timestamp))")
             if let subject = msg.subject {
                 print("Subject: \(subject)")
@@ -79,7 +96,6 @@ struct InboxCommand: ParsableCommand {
         if let session = ProcessInfo.processInfo.environment["WORKFORCE_SESSION"] {
             return session
         }
-        // Try to detect from tmux
         if let tmuxSession = detectCurrentTmuxSession(), tmuxSession.hasPrefix("workforce-") {
             return tmuxSession
         }

@@ -35,12 +35,14 @@ struct StopCommand: ParsableCommand {
             }
         }
 
-        // Check mailbox for unread messages and notify via tmux if any
-        let unreadCount = Mailbox.unreadCount(for: sessionId)
-        if unreadCount > 0 {
+        // Check mailbox for unread messages (direct + broadcasts) and notify via tmux
+        let directCount = Mailbox.unreadCount(for: sessionId)
+        let broadcastCount = Mailbox.unseenBroadcastCount(for: sessionId, cwd: event.cwd)
+        let totalUnread = directCount + broadcastCount
+        if totalUnread > 0 {
             notifyViaTmux(
                 session: sessionId,
-                prompt: "You have \(unreadCount) unread message\(unreadCount == 1 ? "" : "s") from other agents. Run `workforce inbox` to read them."
+                prompt: "You have \(totalUnread) unread message\(totalUnread == 1 ? "" : "s") from other agents. Run `workforce inbox` to read them."
             )
         }
     }

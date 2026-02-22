@@ -5,11 +5,11 @@ import WorkforceKit
 struct SendCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "send",
-        abstract: "Send a message to another agent"
+        abstract: "Send a message to another agent or broadcast to all"
     )
 
-    @Argument(help: "Target session ID (or partial match)")
-    var target: String
+    @Argument(help: "Target session ID (or partial match). Ignored when --broadcast or --project is used.")
+    var target: String?
 
     @Argument(help: "Message body")
     var message: String
@@ -23,67 +23,113 @@ struct SendCommand: ParsableCommand {
     @Option(name: .long, help: "Priority: low, normal, high")
     var priority: String = "normal"
 
-    func run() throws {
-        let fromSession = resolveCurrentSession()
-        let toSession = try resolveTarget(target)
+    @Flag(name: .long, help: "Broadcast to all agents globally (current and future)")
+    var broadcast: Bool = false
 
-        let msgType = AgentMessage.MessageType(rawValue: type) ?? .message
-        let msgPriority = AgentMessage.Priority(rawValue: priority) ?? .normal
+    @Flag(name: .long, help: "Broadcast to all agents in the current project directory")
+    var project: Bool = false
 
-        let agentMessage = AgentMessage(
-            from: fromSession,
-            to: toSession,
-            type: msgType,
-            priority: msgPriority,
-            subject: subject,
-            body: message
-        )
-
-        // Deliver to file-based mailbox
-        try Mailbox.deliver(agentMessage)
-
-        // Notify the Workforce app via socket
-        SocketClient.send(SocketMessage(
-            type: .agentMessage,
-            sessionId: fromSession,
-            cwd: FileManager.default.currentDirectoryPath,
-            messageFrom: fromSession,
-            messageTo: toSession,
-            messageBody: message,
-            messageSubject: subject,
-            messageType: type,
-            messagePriority: priority
-        ))
-
-        print("Message sent to \(toSession)")
+    func validate() throws {
+        if !broadcast && !project && target == nil {
+            throw ValidationError("Provide a target session ID, or use --broadcast / --project")
+        }
     }
 
-    /// Resolve the current agent's session ID.
+    func run() throws {
+        let fromSession = resolveCurrentSession()
+        let msgType = AgentMessage.MessageType(rawValue: type) ?? .message
+        let msgPriority = AgentMessage.Priority(rawValue: priority) ?? .normal
+        let cwd = FileManager.default.currentDirectoryPath
+
+        if broadcast || project {
+            let broadcastTo = broadcast ? "broadcast:global" : "broadcast:project"
+            let agentMessage = AgentMessage(
+                from: fromSession,
+                to: broadcastTo,
+                type: msgType,
+                priority: msgPriority,
+                subject: subject,
+                body: message
+            )
+
+            if broadcast {
+                try Mailbox.broadcastGlobal(agentMessage)
+                print("Message broadcast globally")
+            }
+            if project {
+                let projectMessage = AgentMessage(
+                    from: fromSession,
+                    to: "broadcast:project",
+                    type: msgType,
+                    priority: msgPriority,
+                    subject: subject,
+                    body: message
+                )
+                try Mailbox.broadcastToProject(cwd: cwd, projectMessage)
+                print("Message broadcast to project: \(cwd)")
+            }
+
+            // Notify the Workforce app
+            SocketClient.send(SocketMessage(
+                type: .agentMessage,
+                sessionId: fromSession,
+                cwd: cwd,
+                messageFrom: fromSession,
+                messageTo: broadcast ? "broadcast:global" : "broadcast:project",
+                messageBody: message,
+                messageSubject: subject,
+                messageType: type,
+                messagePriority: priority
+            ))
+        } else {
+            let toSession = try resolveTarget(target!)
+
+            let agentMessage = AgentMessage(
+                from: fromSession,
+                to: toSession,
+                type: msgType,
+                priority: msgPriority,
+                subject: subject,
+                body: message
+            )
+
+            try Mailbox.deliver(agentMessage)
+
+            SocketClient.send(SocketMessage(
+                type: .agentMessage,
+                sessionId: fromSession,
+                cwd: cwd,
+                messageFrom: fromSession,
+                messageTo: toSession,
+                messageBody: message,
+                messageSubject: subject,
+                messageType: type,
+                messagePriority: priority
+            ))
+
+            print("Message sent to \(toSession)")
+        }
+    }
+
     private func resolveCurrentSession() -> String {
         if let session = ProcessInfo.processInfo.environment["WORKFORCE_SESSION"] {
             return session
         }
-        // Fall back to a generic identifier
         return "cli-\(ProcessInfo.processInfo.processIdentifier)"
     }
 
-    /// Resolve a target session ID, supporting partial matches via the API or tmux discovery.
     private func resolveTarget(_ input: String) throws -> String {
-        // If it's an exact session ID, use it directly
         let agents = APIClient.fetchAgents() ?? TmuxClient.discoverAgents()
 
-        // Exact match
         if let agent = agents.first(where: { $0.sessionId == input }) {
             return agent.sessionId
         }
 
-        // Partial match on session ID
         let partialMatches = agents.filter { $0.sessionId.contains(input) }
         if partialMatches.count == 1 {
             return partialMatches[0].sessionId
         }
 
-        // Match by display title
         let titleMatches = agents.filter {
             $0.displayTitle.localizedCaseInsensitiveContains(input)
         }
@@ -98,7 +144,6 @@ struct SendCommand: ParsableCommand {
             throw ExitCode(1)
         }
 
-        // No match found — still allow sending (the mailbox will be created)
         return input
     }
 }
