@@ -18,16 +18,42 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         guard agent.status == .waitingForInput || agent.status == .waitingForPermission else { return }
         guard previousStatus != agent.status else { return }
 
-        // Always send system notifications, even when the app is active.
+        let defaultBody = agent.status == .waitingForPermission
+            ? "Needs permission to continue"
+            : "Waiting for your input"
 
+        // Fire notification immediately with default text, then update if summary arrives
+        let identifier = "workforce-\(agent.sessionId)"
+        sendNotification(identifier: identifier, title: agent.displayTitle, body: defaultBody, sessionId: agent.sessionId)
+
+        // Try to enrich with transcript summary
+        if let transcriptPath = agent.transcriptPath {
+            // Read transcript and resolve backend on the main actor before entering the summarizer actor
+            let messages = TranscriptReader.lastAssistantMessages(from: transcriptPath, count: 10)
+            let backend = SummarizationBackend(
+                rawValue: UserDefaults.standard.string(forKey: "summarizationBackend") ?? SummarizationBackend.systemDefault.rawValue
+            ) ?? .systemDefault
+            let title = agent.displayTitle
+            let sessionId = agent.sessionId
+            Task {
+                if let summary = await TranscriptSummarizer.shared.summarize(transcriptPath: transcriptPath, messages: messages, backend: backend) {
+                    await MainActor.run {
+                        self.sendNotification(identifier: identifier, title: title, body: summary, sessionId: sessionId)
+                    }
+                }
+            }
+        }
+    }
+
+    private func sendNotification(identifier: String, title: String, body: String, sessionId: String) {
         let content = UNMutableNotificationContent()
-        content.title = agent.displayTitle
-        content.body = agent.status == .waitingForPermission ? "Needs permission to continue" : "Waiting for your input"
+        content.title = title
+        content.body = body
         content.sound = .default
-        content.userInfo = ["sessionId": agent.sessionId]
+        content.userInfo = ["sessionId": sessionId]
 
         let request = UNNotificationRequest(
-            identifier: "workforce-\(agent.sessionId)",
+            identifier: identifier,
             content: content,
             trigger: nil
         )

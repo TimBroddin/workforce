@@ -3,6 +3,9 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
+    @AppStorage("summarizationBackend") private var summarizationBackend: String = SummarizationBackend.systemDefault.rawValue
+    @AppStorage("openRouterAPIKey") private var openRouterAPIKey: String = ""
+    @AppStorage("openRouterModel") private var openRouterModel: String = "google/gemini-2.0-flash-001"
 
     @State private var cliInstalled = false
     @State private var cliNeedsUpdate = false
@@ -21,6 +24,20 @@ struct SettingsView: View {
             Picker("Default IDE", selection: $defaultIDE) {
                 ForEach(SupportedIDE.allCases) { ide in
                     Text(ide.rawValue).tag(ide.rawValue)
+                }
+            }
+
+            Section("Notification Summaries") {
+                Picker("Backend", selection: $summarizationBackend) {
+                    ForEach(SummarizationBackend.availableCases) { backend in
+                        Text(backend.rawValue).tag(backend.rawValue)
+                    }
+                }
+
+                if summarizationBackend == SummarizationBackend.openRouter.rawValue {
+                    SecureField("OpenRouter API Key", text: $openRouterAPIKey)
+                    TextField("Model", text: $openRouterModel)
+                        .font(.caption)
                 }
             }
 
