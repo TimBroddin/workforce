@@ -28,7 +28,6 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
         // Try to enrich with transcript summary
         if let transcriptPath = agent.transcriptPath {
-            // Read transcript and resolve backend on the main actor before entering the summarizer actor
             let messages = TranscriptReader.lastAssistantMessages(from: transcriptPath, count: 10)
             let backend = SummarizationBackend(
                 rawValue: UserDefaults.standard.string(forKey: "summarizationBackend") ?? SummarizationBackend.systemDefault.rawValue

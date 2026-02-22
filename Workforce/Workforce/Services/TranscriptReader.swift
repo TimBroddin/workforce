@@ -10,7 +10,7 @@ enum TranscriptReader {
 
         var messages: [String] = []
         for line in content.split(separator: "\n").reversed() where !line.isEmpty {
-            guard let lineData = line.data(using: .utf8),
+            guard let lineData = String(line).data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   let message = json["message"] as? [String: Any],
                   let role = message["role"] as? String,
