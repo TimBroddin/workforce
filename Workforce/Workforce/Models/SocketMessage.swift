@@ -9,6 +9,7 @@ public enum SocketMessageType: String, Codable, Sendable, CaseIterable {
     case subagentStart
     case subagentStop
     case deregister
+    case updateTokens
 
     var badgeColor: Color {
         switch self {
@@ -19,6 +20,7 @@ public enum SocketMessageType: String, Codable, Sendable, CaseIterable {
         case .notification: .orange
         case .subagentStart: .purple
         case .subagentStop: .purple
+        case .updateTokens: .blue
         }
     }
 }
@@ -42,6 +44,12 @@ public struct SocketMessage: Codable, Sendable {
     public var agentType: String?
     public var tmuxSession: String?
 
+    // Token tracking fields (only for .updateTokens)
+    public var inputTokens: Int?
+    public var outputTokens: Int?
+    public var cacheCreationTokens: Int?
+    public var cacheReadTokens: Int?
+
     public init(
         type: SocketMessageType,
         sessionId: String,
@@ -54,7 +62,11 @@ public struct SocketMessage: Codable, Sendable {
         toolName: String? = nil,
         notificationType: String? = nil,
         agentType: String? = nil,
-        tmuxSession: String? = nil
+        tmuxSession: String? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        cacheCreationTokens: Int? = nil,
+        cacheReadTokens: Int? = nil
     ) {
         self.type = type
         self.sessionId = sessionId
@@ -68,5 +80,9 @@ public struct SocketMessage: Codable, Sendable {
         self.notificationType = notificationType
         self.agentType = agentType
         self.tmuxSession = tmuxSession
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.cacheCreationTokens = cacheCreationTokens
+        self.cacheReadTokens = cacheReadTokens
     }
 }

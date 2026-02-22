@@ -29,6 +29,12 @@ public struct Agent: Codable, Identifiable, Sendable {
     public var subagentCount: Int
     public var paneTitle: String?
 
+    // Token tracking
+    public var totalInputTokens: Int
+    public var totalOutputTokens: Int
+    public var totalCacheCreationTokens: Int
+    public var totalCacheReadTokens: Int
+
     /// User-facing title for the agent, preferring meaningful pane titles.
     public var displayTitle: String {
         let title: String? = paneTitle.flatMap { paneTitle in
@@ -59,7 +65,11 @@ public struct Agent: Codable, Identifiable, Sendable {
         currentToolName: String? = nil,
         lastNotificationType: String? = nil,
         subagentCount: Int = 0,
-        paneTitle: String? = nil
+        paneTitle: String? = nil,
+        totalInputTokens: Int = 0,
+        totalOutputTokens: Int = 0,
+        totalCacheCreationTokens: Int = 0,
+        totalCacheReadTokens: Int = 0
     ) {
         self.sessionId = sessionId
         self.name = name
@@ -75,6 +85,10 @@ public struct Agent: Codable, Identifiable, Sendable {
         self.lastNotificationType = lastNotificationType
         self.subagentCount = subagentCount
         self.paneTitle = paneTitle
+        self.totalInputTokens = totalInputTokens
+        self.totalOutputTokens = totalOutputTokens
+        self.totalCacheCreationTokens = totalCacheCreationTokens
+        self.totalCacheReadTokens = totalCacheReadTokens
     }
 
     /// Titles that processes set automatically and aren't meaningful to display.

@@ -60,6 +60,15 @@ final class AgentStore {
             agent.subagentCount = max(0, agent.subagentCount - 1)
             agents[message.sessionId] = agent
 
+        case .updateTokens:
+            var agent = ensureAgent(for: message)
+            agent.lastActivityAt = message.timestamp
+            if let input = message.inputTokens { agent.totalInputTokens = input }
+            if let output = message.outputTokens { agent.totalOutputTokens = output }
+            if let cacheCreation = message.cacheCreationTokens { agent.totalCacheCreationTokens = cacheCreation }
+            if let cacheRead = message.cacheReadTokens { agent.totalCacheReadTokens = cacheRead }
+            agents[message.sessionId] = agent
+
         case .deregister:
             // Don't remove the agent if the tmux session is still alive
             // (e.g. /clear just ends the Claude session, not the terminal)
