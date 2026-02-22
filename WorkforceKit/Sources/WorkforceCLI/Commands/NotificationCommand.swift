@@ -19,7 +19,8 @@ struct NotificationCommand: ParsableCommand {
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
             status: status,
-            notificationType: event.type
+            notificationType: event.type,
+            transcriptPath: event.transcriptPath
         ))
     }
 }

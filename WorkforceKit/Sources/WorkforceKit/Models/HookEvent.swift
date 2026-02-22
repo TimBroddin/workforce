@@ -48,12 +48,16 @@ public struct NotificationEvent: Decodable, Sendable {
     public let cwd: String
     public let hookEventName: String
     public let type: String?
+    public let transcriptPath: String?
+    public let message: String?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
         case cwd
         case hookEventName = "hook_event_name"
         case type
+        case transcriptPath = "transcript_path"
+        case message
     }
 }
 

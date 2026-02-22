@@ -5,6 +5,13 @@ import Observation
 final class AgentStore {
     var agents: [String: Agent] = [:]
 
+    private static let storePath: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Workforce", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("agents.json")
+    }()
+
     var sortedAgents: [Agent] {
         agents.values.sorted { a, b in
             a.startedAt < b.startedAt
@@ -44,6 +51,7 @@ final class AgentStore {
             let previousStatus = agent.status
             agent.lastActivityAt = message.timestamp
             agent.lastNotificationType = message.notificationType
+            if let path = message.transcriptPath { agent.transcriptPath = path }
             if let status = message.status { agent.status = status }
             agents[message.sessionId] = agent
             NotificationManager.shared.notifyIfNeeded(agent: agent, previousStatus: previousStatus)
@@ -85,6 +93,7 @@ final class AgentStore {
                 agents.removeValue(forKey: message.sessionId)
             }
         }
+        save()
     }
 
     /// Returns the existing agent for this session, or auto-registers one from the message.
@@ -134,6 +143,7 @@ final class AgentStore {
             status: .idle
         )
         agents[sessionName] = agent
+        save()
         return sessionName
     }
 
@@ -141,14 +151,17 @@ final class AgentStore {
         guard let agent = agents[sessionId],
               let tmux = agent.tmuxSession else {
             agents.removeValue(forKey: sessionId)
+            save()
             return
         }
         _ = runTmux(["kill-session", "-t", tmux])
         agents.removeValue(forKey: sessionId)
+        save()
     }
 
     func removeAgent(_ sessionId: String) {
         agents.removeValue(forKey: sessionId)
+        save()
     }
 
     func discoverTmuxSessions() {
@@ -168,15 +181,18 @@ final class AgentStore {
             )
             agents[session] = agent
         }
+        save()
     }
 
     func pruneStale() {
+        let before = agents.count
         for (id, agent) in agents {
             guard let tmux = agent.tmuxSession else { continue }
             if !tmuxSessionExists(tmux) {
                 agents.removeValue(forKey: id)
             }
         }
+        if agents.count != before { save() }
     }
 
     func refreshPaneTitles() {
@@ -186,6 +202,36 @@ final class AgentStore {
             if agent.paneTitle != title {
                 agent.paneTitle = title
                 agents[id] = agent
+            }
+        }
+    }
+
+    // MARK: - Persistence
+
+    func save() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(Array(agents.values)) else { return }
+        try? data.write(to: Self.storePath, options: .atomic)
+    }
+
+    func load() {
+        guard let data = try? Data(contentsOf: Self.storePath) else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let saved = try? decoder.decode([Agent].self, from: data) else { return }
+        for agent in saved {
+            // Only restore if we don't already have this agent (tmux discovery takes priority)
+            if agents[agent.sessionId] == nil {
+                agents[agent.sessionId] = agent
+            } else {
+                // Merge token data from persisted state into tmux-discovered agent
+                var existing = agents[agent.sessionId]!
+                if existing.totalInputTokens == 0 { existing.totalInputTokens = agent.totalInputTokens }
+                if existing.totalOutputTokens == 0 { existing.totalOutputTokens = agent.totalOutputTokens }
+                if existing.totalCacheCreationTokens == 0 { existing.totalCacheCreationTokens = agent.totalCacheCreationTokens }
+                if existing.totalCacheReadTokens == 0 { existing.totalCacheReadTokens = agent.totalCacheReadTokens }
+                agents[agent.sessionId] = existing
             }
         }
     }
