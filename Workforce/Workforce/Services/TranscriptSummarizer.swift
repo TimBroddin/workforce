@@ -18,6 +18,16 @@ enum SummarizationBackend: String, CaseIterable, Identifiable {
         return [.openRouter]
     }
 
+    /// Whether Apple Intelligence is ready to use on this system.
+    static var isAppleIntelligenceReady: Bool {
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) {
+            return SystemLanguageModel.default.availability == .available
+        }
+        #endif
+        return false
+    }
+
     /// Sensible default for the current system.
     static var systemDefault: SummarizationBackend {
         #if canImport(FoundationModels)

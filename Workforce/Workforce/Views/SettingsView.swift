@@ -34,6 +34,14 @@ struct SettingsView: View {
                     }
                 }
 
+                if summarizationBackend == SummarizationBackend.appleIntelligence.rawValue {
+                    if !SummarizationBackend.isAppleIntelligenceReady {
+                        Label("Apple Intelligence is not enabled. Enable it in System Settings → Apple Intelligence & Siri.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                    }
+                }
+
                 if summarizationBackend == SummarizationBackend.openRouter.rawValue {
                     SecureField("OpenRouter API Key", text: $openRouterAPIKey)
                     TextField("Model", text: $openRouterModel)
