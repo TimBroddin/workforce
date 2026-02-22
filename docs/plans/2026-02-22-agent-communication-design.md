@@ -212,18 +212,19 @@ This bridges the gap between passive mailbox and active notification without req
 
 ## Recommendation
 
-**Phase 1: CLI + File Mailbox**
+**Phase 1: CLI + File Mailbox** ✅
 
 - Implement `workforce send`, `workforce inbox`, `workforce instruct`
 - File-based mailbox in `~/.workforce/mailboxes/`
-- New socket message type `.message` so the app can visualize messages
-- Hook-based "you have mail" notification on agent idle
+- New socket message type `.agentMessage` so the app can visualize messages
+- Hook-based "you have mail" notification on agent idle (StopCommand)
 
-**Phase 2: MCP Server**
+**Phase 2: MCP Server** ✅
 
-- Thin MCP server wrapping the same mailbox primitives
-- Expose `send_message`, `read_messages`, `list_agents` as MCP tools
-- Auto-configure via `workforce install-hooks` (add MCP server config)
+- `workforce mcp-serve` — JSON-RPC 2.0 stdio MCP server
+- Exposes `send_message`, `read_messages`, `list_agents` as native MCP tools
+- Auto-configured via `workforce install-hooks` (adds `mcpServers.workforce` to settings)
+- Session identity resolved from `WORKFORCE_SESSION` env var
 
 **Phase 3: Orchestration**
 

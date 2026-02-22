@@ -46,12 +46,23 @@ struct UninstallHooksCommand: ParsableCommand {
         }
 
         settings["hooks"] = hooks
+
+        // Remove MCP server config
+        var removedMCP = false
+        if var mcpServers = settings["mcpServers"] as? [String: Any],
+           mcpServers["workforce"] != nil {
+            mcpServers.removeValue(forKey: "workforce")
+            settings["mcpServers"] = mcpServers.isEmpty ? nil : mcpServers
+            removedMCP = true
+        }
+
         let output = try JSONSerialization.data(
             withJSONObject: settings,
             options: [.prettyPrinted, .sortedKeys]
         )
         try output.write(to: settingsPath)
         print("Removed Claude hooks: \(removedClaude)")
+        print("Removed MCP server: \(removedMCP ? "yes" : "not found")")
         print("Removed OpenCode plugin files: \(removedOpenCode)")
     }
 

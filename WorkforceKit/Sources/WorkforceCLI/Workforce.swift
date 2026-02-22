@@ -26,6 +26,7 @@ struct Workforce: ParsableCommand {
             SendCommand.self,
             InboxCommand.self,
             InstructCommand.self,
+            MCPServeCommand.self,
         ],
         defaultSubcommand: RunCommand.self
     )

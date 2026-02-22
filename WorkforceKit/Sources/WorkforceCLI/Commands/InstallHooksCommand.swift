@@ -61,6 +61,10 @@ struct InstallHooksCommand: ParsableCommand {
         }
 
         settings["hooks"] = hooks
+
+        // Install MCP server configuration
+        let mcpInstalled = Self.installMCPConfig(into: &settings, binaryPath: binaryPath)
+
         let output = try JSONSerialization.data(
             withJSONObject: settings,
             options: [.prettyPrinted, .sortedKeys]
@@ -68,6 +72,7 @@ struct InstallHooksCommand: ParsableCommand {
         try output.write(to: settingsPath)
 
         print("Installed Claude hooks: \(installed). (\(hookEvents.count - installed) already present)")
+        print("Installed MCP server: \(mcpInstalled ? "yes" : "already present")")
         print("Installed OpenCode plugin files: \(openCodeInstalled)")
         print("Claude settings written to: \(settingsPath.path)")
         print("OpenCode plugin path: \(Self.openCodePluginPath.path)")
@@ -77,6 +82,32 @@ struct InstallHooksCommand: ParsableCommand {
         .appendingPathComponent(".claude/settings.json")
     private static let openCodePluginPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/opencode/plugins/workforce.js")
+
+    /// Add workforce MCP server to mcpServers in Claude Code settings.
+    /// Returns true if a new entry was added, false if already present.
+    private static func installMCPConfig(into settings: inout [String: Any], binaryPath: String) -> Bool {
+        var mcpServers = settings["mcpServers"] as? [String: Any] ?? [:]
+
+        // Check if already configured
+        if let existing = mcpServers["workforce"] as? [String: Any],
+           let command = existing["command"] as? String,
+           isWorkforceCommand(command) {
+            // Update the command path in case it changed
+            mcpServers["workforce"] = [
+                "command": binaryPath,
+                "args": ["mcp-serve"]
+            ] as [String: Any]
+            settings["mcpServers"] = mcpServers
+            return false
+        }
+
+        mcpServers["workforce"] = [
+            "command": binaryPath,
+            "args": ["mcp-serve"]
+        ] as [String: Any]
+        settings["mcpServers"] = mcpServers
+        return true
+    }
 
     private static func isWorkforceCommand(_ command: String) -> Bool {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
