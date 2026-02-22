@@ -29,6 +29,7 @@ public struct Agent: Codable, Identifiable, Sendable {
     public var subagentCount: Int
     public var paneTitle: String?
     public var transcriptPath: String?
+    public var notificationMessage: String?
 
     // Token tracking
     public var totalInputTokens: Int
@@ -68,6 +69,7 @@ public struct Agent: Codable, Identifiable, Sendable {
         subagentCount: Int = 0,
         paneTitle: String? = nil,
         transcriptPath: String? = nil,
+        notificationMessage: String? = nil,
         totalInputTokens: Int = 0,
         totalOutputTokens: Int = 0,
         totalCacheCreationTokens: Int = 0,
@@ -88,6 +90,7 @@ public struct Agent: Codable, Identifiable, Sendable {
         self.subagentCount = subagentCount
         self.paneTitle = paneTitle
         self.transcriptPath = transcriptPath
+        self.notificationMessage = notificationMessage
         self.totalInputTokens = totalInputTokens
         self.totalOutputTokens = totalOutputTokens
         self.totalCacheCreationTokens = totalCacheCreationTokens

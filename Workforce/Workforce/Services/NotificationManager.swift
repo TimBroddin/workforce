@@ -18,15 +18,14 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         guard agent.status == .waitingForInput || agent.status == .waitingForPermission else { return }
         guard previousStatus != agent.status else { return }
 
-        let defaultBody = agent.status == .waitingForPermission
-            ? "Needs permission to continue"
-            : "Waiting for your input"
+        // Use Claude's message if available, otherwise a generic fallback
+        let immediateBody = agent.notificationMessage
+            ?? (agent.status == .waitingForPermission ? "Needs permission to continue" : "Waiting for your input")
 
-        // Fire notification immediately with default text, then update if summary arrives
         let identifier = "workforce-\(agent.sessionId)"
-        sendNotification(identifier: identifier, title: agent.displayTitle, body: defaultBody, sessionId: agent.sessionId)
+        sendNotification(identifier: identifier, title: agent.displayTitle, body: immediateBody, sessionId: agent.sessionId)
 
-        // Try to enrich with transcript summary
+        // Try to enrich with transcript summary in the background
         if let transcriptPath = agent.transcriptPath {
             let messages = TranscriptReader.lastAssistantMessages(from: transcriptPath, count: 10)
             let backend = SummarizationBackend(

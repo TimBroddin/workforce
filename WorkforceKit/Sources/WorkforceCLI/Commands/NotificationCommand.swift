@@ -20,7 +20,8 @@ struct NotificationCommand: ParsableCommand {
             cwd: event.cwd,
             status: status,
             notificationType: event.type,
-            transcriptPath: event.transcriptPath
+            transcriptPath: event.transcriptPath,
+            notificationMessage: event.message
         ))
     }
 }

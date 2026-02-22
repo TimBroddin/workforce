@@ -38,6 +38,7 @@ public struct SocketMessage: Codable, Sendable {
 
     // Notification context fields
     public var transcriptPath: String?
+    public var notificationMessage: String?
 
     public init(
         type: SocketMessageType,
@@ -56,7 +57,8 @@ public struct SocketMessage: Codable, Sendable {
         outputTokens: Int? = nil,
         cacheCreationTokens: Int? = nil,
         cacheReadTokens: Int? = nil,
-        transcriptPath: String? = nil
+        transcriptPath: String? = nil,
+        notificationMessage: String? = nil
     ) {
         self.type = type
         self.sessionId = sessionId
@@ -75,5 +77,6 @@ public struct SocketMessage: Codable, Sendable {
         self.cacheCreationTokens = cacheCreationTokens
         self.cacheReadTokens = cacheReadTokens
         self.transcriptPath = transcriptPath
+        self.notificationMessage = notificationMessage
     }
 }

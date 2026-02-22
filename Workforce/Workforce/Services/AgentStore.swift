@@ -52,6 +52,7 @@ final class AgentStore {
             agent.lastActivityAt = message.timestamp
             agent.lastNotificationType = message.notificationType
             if let path = message.transcriptPath { agent.transcriptPath = path }
+            if let msg = message.notificationMessage { agent.notificationMessage = msg }
             if let status = message.status { agent.status = status }
             agents[message.sessionId] = agent
             NotificationManager.shared.notifyIfNeeded(agent: agent, previousStatus: previousStatus)
