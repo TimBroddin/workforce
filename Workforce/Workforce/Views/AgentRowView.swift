@@ -36,6 +36,20 @@ struct AgentRowView: View {
 
             Spacer()
 
+            if agent.totalInputTokens > 0 || agent.totalOutputTokens > 0 {
+                let cost = CostCalculator.estimateCost(
+                    model: agent.model,
+                    inputTokens: agent.totalInputTokens,
+                    outputTokens: agent.totalOutputTokens,
+                    cacheCreationTokens: agent.totalCacheCreationTokens,
+                    cacheReadTokens: agent.totalCacheReadTokens
+                )
+                Text(CostCalculator.formatCost(cost))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+
             PulsingDot(color: statusColor, isPulsing: agent.status == .active)
                 .help(statusLabel)
         }

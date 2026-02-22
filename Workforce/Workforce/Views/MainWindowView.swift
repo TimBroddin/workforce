@@ -376,6 +376,22 @@ struct MainWindowView: View {
 
             Spacer()
 
+            let folderCost = agents(for: cwd).reduce(0.0) { total, agent in
+                total + CostCalculator.estimateCost(
+                    model: agent.model,
+                    inputTokens: agent.totalInputTokens,
+                    outputTokens: agent.totalOutputTokens,
+                    cacheCreationTokens: agent.totalCacheCreationTokens,
+                    cacheReadTokens: agent.totalCacheReadTokens
+                )
+            }
+            if folderCost > 0 {
+                Text(CostCalculator.formatCost(folderCost))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+
             Menu {
                 Button("Claude") {
                     selectedAgentId = store.spawnAgent(cwd: cwd, agentType: "claude")
@@ -478,9 +494,27 @@ struct MainWindowView: View {
 
     private var footer: some View {
         HStack {
+            let totalCost = store.sortedAgents.reduce(0.0) { total, agent in
+                total + CostCalculator.estimateCost(
+                    model: agent.model,
+                    inputTokens: agent.totalInputTokens,
+                    outputTokens: agent.totalOutputTokens,
+                    cacheCreationTokens: agent.totalCacheCreationTokens,
+                    cacheReadTokens: agent.totalCacheReadTokens
+                )
+            }
             Text("\(store.agents.count) agent\(store.agents.count == 1 ? "" : "s")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if totalCost > 0 {
+                Text("·")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Text(CostCalculator.formatCost(totalCost))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
