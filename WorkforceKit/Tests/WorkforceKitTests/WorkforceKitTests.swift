@@ -122,3 +122,66 @@ import Testing
     #expect(decoded.lastNotificationType == "approval_request")
     #expect(decoded.subagentCount == 2)
 }
+
+@Test func socketMessageRoundTripPreservesTokenFields() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_735_689_600)
+    let message = SocketMessage(
+        type: .updateTokens,
+        sessionId: "session-6",
+        cwd: "/tmp/project",
+        timestamp: timestamp,
+        inputTokens: 1500,
+        outputTokens: 800,
+        cacheCreationTokens: 200,
+        cacheReadTokens: 3000
+    )
+
+    let encoded = try JSONEncoder().encode(message)
+    let decoded = try JSONDecoder().decode(SocketMessage.self, from: encoded)
+
+    #expect(decoded.type == .updateTokens)
+    #expect(decoded.sessionId == "session-6")
+    #expect(decoded.cwd == "/tmp/project")
+    #expect(decoded.timestamp == timestamp)
+    #expect(decoded.inputTokens == 1500)
+    #expect(decoded.outputTokens == 800)
+    #expect(decoded.cacheCreationTokens == 200)
+    #expect(decoded.cacheReadTokens == 3000)
+}
+
+@Test func agentTokenFieldsDefaultToZeroAndRoundTrip() throws {
+    let startedAt = Date(timeIntervalSince1970: 1_735_690_000)
+
+    // Verify defaults are 0
+    let agentDefaults = Agent(
+        sessionId: "session-7",
+        name: "Token Tracker",
+        avatarSeed: "seed-7",
+        cwd: "/tmp/project"
+    )
+    #expect(agentDefaults.totalInputTokens == 0)
+    #expect(agentDefaults.totalOutputTokens == 0)
+    #expect(agentDefaults.totalCacheCreationTokens == 0)
+    #expect(agentDefaults.totalCacheReadTokens == 0)
+
+    // Verify round-trip with non-zero values
+    let agent = Agent(
+        sessionId: "session-8",
+        name: "Token Tracker",
+        avatarSeed: "seed-8",
+        cwd: "/tmp/project",
+        startedAt: startedAt,
+        totalInputTokens: 5000,
+        totalOutputTokens: 2500,
+        totalCacheCreationTokens: 1000,
+        totalCacheReadTokens: 8000
+    )
+
+    let encoded = try JSONEncoder().encode(agent)
+    let decoded = try JSONDecoder().decode(Agent.self, from: encoded)
+
+    #expect(decoded.totalInputTokens == 5000)
+    #expect(decoded.totalOutputTokens == 2500)
+    #expect(decoded.totalCacheCreationTokens == 1000)
+    #expect(decoded.totalCacheReadTokens == 8000)
+}
