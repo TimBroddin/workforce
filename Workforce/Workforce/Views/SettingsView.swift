@@ -5,7 +5,7 @@ struct SettingsView: View {
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
     @AppStorage("summarizationBackend") private var summarizationBackend: String = SummarizationBackend.systemDefault.rawValue
     @AppStorage("openRouterAPIKey") private var openRouterAPIKey: String = ""
-    @AppStorage("openRouterModel") private var openRouterModel: String = "google/gemini-2.0-flash-001"
+    @AppStorage("openRouterModel") private var openRouterModel: String = "google/gemini-2.5-flash-lite"
 
     @State private var cliInstalled = false
     @State private var cliNeedsUpdate = false

@@ -98,7 +98,7 @@ actor TranscriptSummarizer {
     private func summarizeWithOpenRouter(_ text: String) async throws -> String? {
         guard let apiKey = UserDefaults.standard.string(forKey: "openRouterAPIKey"),
               !apiKey.isEmpty else { return nil }
-        let model = UserDefaults.standard.string(forKey: "openRouterModel") ?? "google/gemini-2.0-flash-001"
+        let model = UserDefaults.standard.string(forKey: "openRouterModel") ?? "google/gemini-2.5-flash-lite"
 
         var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
         request.httpMethod = "POST"
