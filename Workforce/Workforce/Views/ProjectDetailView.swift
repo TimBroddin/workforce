@@ -4,6 +4,7 @@ struct ProjectDetailView: View {
     let cwd: String
     let store: AgentStore
     let eventLog: EventLog
+    let messageStore: MessageStore
     @State private var selectedTab = 0
     @State private var gitInfo: GitInfo?
     @AppStorage("showCosts") private var showCosts = true
@@ -116,6 +117,7 @@ struct ProjectDetailView: View {
             tabButton(title: "Stats", icon: "chart.bar.fill", tag: 0)
             tabButton(title: "Git", icon: "arrow.triangle.branch", tag: 1)
             tabButton(title: "Activity", icon: "bolt.fill", tag: 2)
+            tabButton(title: "Messages", icon: "bubble.left.and.bubble.right.fill", tag: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -154,6 +156,7 @@ struct ProjectDetailView: View {
         case 0: statsTab
         case 1: gitTab
         case 2: activityTab
+        case 3: messagesTab
         default: EmptyView()
         }
     }
@@ -421,6 +424,133 @@ struct ProjectDetailView: View {
         .padding(.vertical, 6)
     }
 
+    // MARK: - Messages Tab
+
+    private var messagesTab: some View {
+        let agentIds = Set(projectAgents.map(\.sessionId))
+        let projectMessages = messageStore.messages(forAgents: agentIds)
+            .sorted { $0.timestamp > $1.timestamp }
+
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if projectMessages.isEmpty {
+                    emptyState(
+                        icon: "bubble.left.and.bubble.right",
+                        title: "No Messages",
+                        subtitle: "Inter-agent messages will appear here.\nUse `workforce send` or `workforce instruct` to send messages between agents."
+                    )
+                    .padding(.top, 40)
+                } else {
+                    ForEach(projectMessages) { msg in
+                        messageRow(msg)
+                        if msg.id != projectMessages.last?.id {
+                            Divider()
+                                .padding(.leading, 36)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func messageRow(_ msg: AgentMessage) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(messageColor(msg).opacity(0.15))
+                    .frame(width: 24, height: 24)
+                Image(systemName: messageIcon(msg))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(messageColor(msg))
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(agentDisplayName(msg.from))
+                        .font(.caption.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
+                    Text(agentDisplayName(msg.to))
+                        .font(.caption.weight(.semibold))
+
+                    if msg.priority == .high {
+                        Text("HIGH")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.red)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    if msg.type != .message {
+                        Text(msg.type.rawValue)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.quaternary)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                }
+
+                if let subject = msg.subject {
+                    Text(subject)
+                        .font(.callout.weight(.medium))
+                }
+
+                Text(msg.body)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+
+                Text(relativeTime(msg.timestamp))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func messageColor(_ msg: AgentMessage) -> Color {
+        switch msg.type {
+        case .instruction: .red
+        case .workRequest: .orange
+        case .artifact: .purple
+        case .statusUpdate: .gray
+        case .message: .teal
+        }
+    }
+
+    private func messageIcon(_ msg: AgentMessage) -> String {
+        switch msg.type {
+        case .instruction: "exclamationmark.bubble.fill"
+        case .workRequest: "hammer.fill"
+        case .artifact: "doc.fill"
+        case .statusUpdate: "info.circle.fill"
+        case .message: "bubble.left.fill"
+        }
+    }
+
+    private func agentDisplayName(_ sessionId: String) -> String {
+        if let agent = store.agents[sessionId] {
+            return agent.displayTitle
+        }
+        // Abbreviate session IDs for display
+        if sessionId.hasPrefix("workforce-") {
+            return String(sessionId.dropFirst("workforce-".count).prefix(8))
+        }
+        if sessionId.hasPrefix("cli-") {
+            return "CLI"
+        }
+        return String(sessionId.prefix(12))
+    }
+
     // MARK: - Shared Components
 
     private func sectionLabel(_ text: String) -> some View {
@@ -470,6 +600,10 @@ struct ProjectDetailView: View {
             return "Subagent finished"
         case .updateTokens:
             return "Token usage reported"
+        case .agentMessage:
+            let from = message.messageFrom ?? "unknown"
+            let to = message.messageTo ?? "unknown"
+            return "Message: \(agentDisplayName(from)) -> \(agentDisplayName(to))"
         }
     }
 
@@ -483,6 +617,7 @@ struct ProjectDetailView: View {
         case .subagentStart: "cpu"
         case .subagentStop: "cpu"
         case .updateTokens: "number"
+        case .agentMessage: "bubble.left.fill"
         }
     }
 

@@ -93,6 +93,11 @@ final class AgentStore {
             } else {
                 agents.removeValue(forKey: message.sessionId)
             }
+
+        case .agentMessage:
+            // Agent messages are handled by MessageStore (routed from SocketServer).
+            // Nothing to do here for agent state.
+            return
         }
         save()
     }

@@ -23,6 +23,9 @@ struct Workforce: ParsableCommand {
             ListCommand.self,
             AttachCommand.self,
             TUICommand.self,
+            SendCommand.self,
+            InboxCommand.self,
+            InstructCommand.self,
         ],
         defaultSubcommand: RunCommand.self
     )

@@ -9,13 +9,14 @@ extension Notification.Name {
 struct WorkforceApp: App {
     @State private var agentStore = AgentStore()
     @State private var eventLog = EventLog()
+    @State private var messageStore = MessageStore()
     @State private var socketServer: SocketServer?
     @State private var httpServer: HTTPServer?
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window("Workforce", id: "main") {
-            MainWindowView(store: agentStore, eventLog: eventLog)
+            MainWindowView(store: agentStore, eventLog: eventLog, messageStore: messageStore)
         }
         .commands {
             CommandGroup(after: .windowArrangement) {
@@ -51,7 +52,10 @@ struct WorkforceApp: App {
         let log = EventLog()
         _eventLog = State(initialValue: log)
 
-        let server = SocketServer(store: store, eventLog: log)
+        let messages = MessageStore()
+        _messageStore = State(initialValue: messages)
+
+        let server = SocketServer(store: store, eventLog: log, messageStore: messages)
         _socketServer = State(initialValue: server)
         try? server.start()
 

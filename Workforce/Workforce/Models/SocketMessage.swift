@@ -10,6 +10,7 @@ public enum SocketMessageType: String, Codable, Sendable, CaseIterable {
     case subagentStop
     case deregister
     case updateTokens
+    case agentMessage
 
     var badgeColor: Color {
         switch self {
@@ -21,6 +22,7 @@ public enum SocketMessageType: String, Codable, Sendable, CaseIterable {
         case .subagentStart: .purple
         case .subagentStop: .purple
         case .updateTokens: .blue
+        case .agentMessage: .teal
         }
     }
 }
@@ -54,6 +56,14 @@ public struct SocketMessage: Codable, Sendable {
     public var transcriptPath: String?
     public var notificationMessage: String?
 
+    // Agent message fields (only for .agentMessage)
+    public var messageFrom: String?
+    public var messageTo: String?
+    public var messageBody: String?
+    public var messageSubject: String?
+    public var messageType: String?
+    public var messagePriority: String?
+
     public init(
         type: SocketMessageType,
         sessionId: String,
@@ -72,7 +82,13 @@ public struct SocketMessage: Codable, Sendable {
         cacheCreationTokens: Int? = nil,
         cacheReadTokens: Int? = nil,
         transcriptPath: String? = nil,
-        notificationMessage: String? = nil
+        notificationMessage: String? = nil,
+        messageFrom: String? = nil,
+        messageTo: String? = nil,
+        messageBody: String? = nil,
+        messageSubject: String? = nil,
+        messageType: String? = nil,
+        messagePriority: String? = nil
     ) {
         self.type = type
         self.sessionId = sessionId
@@ -92,5 +108,11 @@ public struct SocketMessage: Codable, Sendable {
         self.cacheReadTokens = cacheReadTokens
         self.transcriptPath = transcriptPath
         self.notificationMessage = notificationMessage
+        self.messageFrom = messageFrom
+        self.messageTo = messageTo
+        self.messageBody = messageBody
+        self.messageSubject = messageSubject
+        self.messageType = messageType
+        self.messagePriority = messagePriority
     }
 }

@@ -5,11 +5,13 @@ final class SocketServer {
     private var listener: NWListener?
     private let store: AgentStore
     private let eventLog: EventLog
+    private let messageStore: MessageStore
     private let socketPath: String
 
-    init(store: AgentStore, eventLog: EventLog) {
+    init(store: AgentStore, eventLog: EventLog, messageStore: MessageStore) {
         self.store = store
         self.eventLog = eventLog
+        self.messageStore = messageStore
         self.socketPath = "/tmp/workforce-\(getuid()).sock"
     }
 
@@ -70,6 +72,9 @@ final class SocketServer {
                       message.type.rawValue, message.sessionId, message.tmuxSession ?? "nil")
                 eventLog.append(message: message, rawJSON: raw)
                 store.handleMessage(message)
+                if message.type == .agentMessage {
+                    messageStore.recordMessage(from: message)
+                }
             } catch {
                 NSLog("[Workforce] Decode error: %@", error.localizedDescription)
                 eventLog.append(message: nil, rawJSON: raw, error: error.localizedDescription)

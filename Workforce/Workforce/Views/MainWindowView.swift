@@ -4,6 +4,7 @@ import SwiftUI
 struct MainWindowView: View {
     let store: AgentStore
     let eventLog: EventLog
+    let messageStore: MessageStore
     @State private var selectedAgentId: String?
     @State private var selectedFolderCwd: String?
     @State private var collapsedCwds: Set<String> = []
@@ -85,7 +86,7 @@ struct MainWindowView: View {
                     .frame(minWidth: 200, idealWidth: 260, maxWidth: 350)
 
                 if let folderCwd = selectedFolderCwd, selectedAgentId == nil {
-                    ProjectDetailView(cwd: folderCwd, store: store, eventLog: eventLog)
+                    ProjectDetailView(cwd: folderCwd, store: store, eventLog: eventLog, messageStore: messageStore)
                 } else {
                     terminalPane
                 }
@@ -620,6 +621,8 @@ struct MainWindowView: View {
             return "Status: \(statusLabel(message.status) ?? "updated")"
         case .notification:
             return "Notification: \(message.notificationType ?? "event")"
+        case .agentMessage:
+            return "Message: \(message.messageFrom ?? "?") -> \(message.messageTo ?? "?")"
         default:
             return message.type.rawValue
         }
