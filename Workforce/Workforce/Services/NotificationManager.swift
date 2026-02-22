@@ -18,28 +18,31 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         guard agent.status == .waitingForInput || agent.status == .waitingForPermission else { return }
         guard previousStatus != agent.status else { return }
 
-        // Use Claude's message if available, otherwise a generic fallback
-        let immediateBody = agent.notificationMessage
-            ?? (agent.status == .waitingForPermission ? "Needs permission to continue" : "Waiting for your input")
-
+        // Title: Claude's message if available, otherwise agent display title
+        let notificationTitle = agent.notificationMessage ?? agent.displayTitle
         let identifier = "workforce-\(agent.sessionId)"
-        sendNotification(identifier: identifier, title: agent.displayTitle, body: immediateBody, sessionId: agent.sessionId)
+        let agentTitle = agent.displayTitle
+        let sessionId = agent.sessionId
 
-        // Try to enrich with transcript summary in the background
+        // Wait for summary, then send a single notification
         if let transcriptPath = agent.transcriptPath {
             let messages = TranscriptReader.lastAssistantMessages(from: transcriptPath, count: 10)
             let backend = SummarizationBackend(
                 rawValue: UserDefaults.standard.string(forKey: "summarizationBackend") ?? SummarizationBackend.systemDefault.rawValue
             ) ?? .systemDefault
-            let title = agent.displayTitle
-            let sessionId = agent.sessionId
             Task {
-                if let summary = await TranscriptSummarizer.shared.summarize(transcriptPath: transcriptPath, messages: messages, backend: backend) {
-                    await MainActor.run {
-                        self.sendNotification(identifier: identifier, title: title, body: summary, sessionId: sessionId)
-                    }
+                let summary = await TranscriptSummarizer.shared.summarize(transcriptPath: transcriptPath, messages: messages, backend: backend)
+                await MainActor.run {
+                    self.sendNotification(
+                        identifier: identifier,
+                        title: notificationTitle,
+                        body: summary ?? agentTitle,
+                        sessionId: sessionId
+                    )
                 }
             }
+        } else {
+            sendNotification(identifier: identifier, title: notificationTitle, body: agentTitle, sessionId: sessionId)
         }
     }
 
