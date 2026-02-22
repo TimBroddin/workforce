@@ -185,3 +185,31 @@ import Testing
     #expect(decoded.totalCacheCreationTokens == 1000)
     #expect(decoded.totalCacheReadTokens == 8000)
 }
+
+@Test func hookEventBaseDecodesTranscriptPath() throws {
+    let data = """
+    {
+      "session_id": "session-tp-1",
+      "cwd": "/tmp/project",
+      "hook_event_name": "SessionStart",
+      "transcript_path": "/Users/test/.claude/sessions/session-tp-1.jsonl"
+    }
+    """.data(using: .utf8)!
+
+    let event = try JSONDecoder().decode(HookEventBase.self, from: data)
+    #expect(event.sessionId == "session-tp-1")
+    #expect(event.transcriptPath == "/Users/test/.claude/sessions/session-tp-1.jsonl")
+}
+
+@Test func hookEventBaseTranscriptPathIsOptional() throws {
+    let data = """
+    {
+      "session_id": "session-tp-2",
+      "cwd": "/tmp/project",
+      "hook_event_name": "SessionStart"
+    }
+    """.data(using: .utf8)!
+
+    let event = try JSONDecoder().decode(HookEventBase.self, from: data)
+    #expect(event.transcriptPath == nil)
+}

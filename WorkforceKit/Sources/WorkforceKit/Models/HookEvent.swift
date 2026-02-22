@@ -5,11 +5,13 @@ public struct HookEventBase: Decodable, Sendable {
     public let sessionId: String
     public let cwd: String
     public let hookEventName: String
+    public let transcriptPath: String?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
         case cwd
         case hookEventName = "hook_event_name"
+        case transcriptPath = "transcript_path"
     }
 }
 
