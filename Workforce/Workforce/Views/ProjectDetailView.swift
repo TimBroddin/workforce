@@ -6,6 +6,7 @@ struct ProjectDetailView: View {
     let eventLog: EventLog
     @State private var selectedTab = 0
     @State private var gitInfo: GitInfo?
+    @State private var hasBeads = false
     @AppStorage("showCosts") private var showCosts = true
 
     private var projectAgents: [Agent] {
@@ -41,6 +42,7 @@ struct ProjectDetailView: View {
                 await refreshGitInfo()
             }
         }
+        .onAppear { hasBeads = BeadsService.hasBeadsFolder(at: cwd) }
     }
 
     // MARK: - Header
@@ -116,6 +118,9 @@ struct ProjectDetailView: View {
             tabButton(title: "Stats", icon: "chart.bar.fill", tag: 0)
             tabButton(title: "Git", icon: "arrow.triangle.branch", tag: 1)
             tabButton(title: "Activity", icon: "bolt.fill", tag: 2)
+            if hasBeads {
+                tabButton(title: "Issues", icon: "target", tag: 3)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -154,6 +159,7 @@ struct ProjectDetailView: View {
         case 0: statsTab
         case 1: gitTab
         case 2: activityTab
+        case 3: BeadsViewerView(cwd: cwd)
         default: EmptyView()
         }
     }
