@@ -11,7 +11,7 @@ struct SessionStartCommand: ParsableCommand {
     func run() throws {
         let data = try readStdin()
         let event = try JSONDecoder().decode(HookEventBase.self, from: data)
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .updateStatus,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,

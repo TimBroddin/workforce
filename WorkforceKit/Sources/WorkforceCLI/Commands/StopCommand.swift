@@ -13,7 +13,7 @@ struct StopCommand: ParsableCommand {
         let event = try JSONDecoder().decode(HookEventBase.self, from: data)
         let sessionId = resolveSessionId(from: event.sessionId)
 
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .updateStatus,
             sessionId: sessionId,
             cwd: event.cwd,
@@ -23,7 +23,7 @@ struct StopCommand: ParsableCommand {
         if let transcriptPath = event.transcriptPath {
             let usage = TranscriptParser.parseTokenUsage(from: transcriptPath)
             if usage.inputTokens > 0 || usage.outputTokens > 0 {
-                SocketClient.send(SocketMessage(
+                APIClient.post(SocketMessage(
                     type: .updateTokens,
                     sessionId: sessionId,
                     cwd: event.cwd,

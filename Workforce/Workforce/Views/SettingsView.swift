@@ -19,7 +19,7 @@ struct SettingsView: View {
 
 // MARK: - General Settings
 
-private struct GeneralSettingsView: View {
+struct GeneralSettingsView: View {
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
     @AppStorage("summarizationBackend") private var summarizationBackend: String = SummarizationBackend.systemDefault.rawValue
@@ -203,7 +203,7 @@ private struct GeneralSettingsView: View {
 
 // MARK: - Beads Settings
 
-private struct BeadsSettingsView: View {
+struct BeadsSettingsView: View {
     @AppStorage("beadsImplementation") private var beadsImplementation: String = "br"
 
     @State private var bdInstalled = false

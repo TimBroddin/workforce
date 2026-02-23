@@ -320,13 +320,13 @@ struct CommandTerminalRepresentable: NSViewRepresentable {
         config.userContentController = userContentController
 
         let schemeHandler = BundleSchemeHandler()
-        config.setURLSchemeHandler(schemeHandler, forURLScheme: "cmdterm")
+        config.setURLSchemeHandler(schemeHandler, forURLScheme: "workforce")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         context.coordinator.webView = webView
 
-        webView.load(URLRequest(url: URL(string: "cmdterm://terminal.html")!))
+        webView.load(URLRequest(url: URL(string: "workforce://terminal.html")!))
         context.coordinator.startCommand(
             command: command,
             arguments: arguments,

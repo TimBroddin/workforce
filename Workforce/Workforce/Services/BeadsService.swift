@@ -287,12 +287,26 @@ enum BeadsService {
 
     // MARK: - CLAUDE.md / AGENTS.md Instructions
 
-    static func appendBeadsInstructions(to cwd: String) {
+    private static let beadsMarker = "<!-- workforce:beads -->"
+
+    static func hasBeadsInstructions(at cwd: String) -> Bool {
+        for filename in ["CLAUDE.md", "AGENTS.md"] {
+            let path = (cwd as NSString).appendingPathComponent(filename)
+            if let content = try? String(contentsOfFile: path, encoding: .utf8),
+               content.contains(beadsMarker) {
+                return true
+            }
+        }
+        return false
+    }
+
+    static func appendBeadsInstructions(to cwd: String, claudeMd: Bool = true, agentsMd: Bool = true) {
         let impl = preferredImplementation()
         let cmd = impl.rawValue
 
         let block = """
 
+        \(beadsMarker)
         ## Beads Issue Tracking
 
         Use `\(cmd)` for issue tracking in this project.
@@ -301,11 +315,20 @@ enum BeadsService {
         - `\(cmd) create "title" -p <priority>` — create an issue
         - `\(cmd) close <id>` — close a completed issue
         - `\(cmd) show <id>` — view issue details
+        \(beadsMarker)
         """
 
-        for filename in ["CLAUDE.md", "AGENTS.md"] {
+        var filenames: [String] = []
+        if claudeMd { filenames.append("CLAUDE.md") }
+        if agentsMd { filenames.append("AGENTS.md") }
+
+        for filename in filenames {
             let path = (cwd as NSString).appendingPathComponent(filename)
             if FileManager.default.fileExists(atPath: path) {
+                if let content = try? String(contentsOfFile: path, encoding: .utf8),
+                   content.contains(beadsMarker) {
+                    continue
+                }
                 if let handle = FileHandle(forWritingAtPath: path) {
                     handle.seekToEndOfFile()
                     if let data = ("\n" + block + "\n").data(using: .utf8) {
@@ -313,6 +336,9 @@ enum BeadsService {
                     }
                     handle.closeFile()
                 }
+            } else {
+                let content = block.trimmingCharacters(in: .newlines) + "\n"
+                FileManager.default.createFile(atPath: path, contents: content.data(using: .utf8))
             }
         }
     }

@@ -46,7 +46,7 @@ struct RunCommand: ParsableCommand {
             agentType: agent,
             tmuxSession: sessionName
         )
-        SocketClient.send(message)
+        APIClient.post(message)
 
         // Launch tmux directly with argv components to avoid shell escaping issues.
         // Set WORKFORCE_SESSION so hooks running inside this tmux session

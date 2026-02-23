@@ -28,6 +28,28 @@ enum APIClient {
         return result
     }
 
+    static func post(_ message: SocketMessage) {
+        guard let port = readPort() else { return }
+        guard let url = URL(string: "http://localhost:\(port)/api/events") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 2
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let body = try? encoder.encode(message) else { return }
+        request.httpBody = body
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = URLSession.shared.dataTask(with: request) { _, _, _ in
+            semaphore.signal()
+        }
+        task.resume()
+        semaphore.wait()
+    }
+
     private static func readPort() -> UInt16? {
         guard let content = try? String(contentsOfFile: portFilePath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
               let port = UInt16(content) else { return nil }

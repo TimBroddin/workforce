@@ -9,7 +9,6 @@ extension Notification.Name {
 struct WorkforceApp: App {
     @State private var agentStore = AgentStore()
     @State private var eventLog = EventLog()
-    @State private var socketServer: SocketServer?
     @State private var httpServer: HTTPServer?
     @Environment(\.openWindow) private var openWindow
 
@@ -51,13 +50,10 @@ struct WorkforceApp: App {
         let log = EventLog()
         _eventLog = State(initialValue: log)
 
-        let server = SocketServer(store: store, eventLog: log)
-        _socketServer = State(initialValue: server)
-        try? server.start()
-
-        let http = HTTPServer(store: store)
+        let listenOnAll = UserDefaults.standard.bool(forKey: "listenOnAllInterfaces")
+        let http = HTTPServer(store: store, eventLog: log)
         _httpServer = State(initialValue: http)
-        try? http.start()
+        try? http.start(listenOnAllInterfaces: listenOnAll)
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,

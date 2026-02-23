@@ -54,7 +54,8 @@ struct MainWindowView: View {
 
     /// Whether an agent is the currently selected one (matches visual highlight to actual selection).
     private func isSelected(_ agent: Agent) -> Bool {
-        selectedAgent?.sessionId == agent.sessionId
+        guard selectedFolderCwd == nil else { return false }
+        return selectedAgent?.sessionId == agent.sessionId
     }
 
     private var recentEvents: [EventLogEntry] {

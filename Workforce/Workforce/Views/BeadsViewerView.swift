@@ -17,6 +17,13 @@ struct BeadsViewerView: View {
     @State private var newIssueType = ""
     @State private var newIssueDescription = ""
     @State private var isCreating = false
+    @State private var hasBeadsInstructions = false
+    @State private var hasBeadsFolder = true
+    @State private var isInitializing = false
+    @State private var initError: String?
+    @State private var showInstructionsPopover = false
+    @State private var instructionsClaudeMd = true
+    @State private var instructionsAgentsMd = true
 
     enum IssueFilter: String, CaseIterable {
         case all = "All"
@@ -132,6 +139,63 @@ struct BeadsViewerView: View {
                 createIssuePopover
             }
 
+            if !hasBeadsInstructions {
+                Button {
+                    showInstructionsPopover = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.caption2)
+                        Text("Add instructions")
+                            .font(.caption.weight(.medium))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .help("Add beads usage instructions to CLAUDE.md / AGENTS.md")
+                .popover(isPresented: $showInstructionsPopover, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Add Beads Instructions")
+                            .font(.headline)
+
+                        Text("Add beads CLI usage instructions to agent config files in this project.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: 240)
+
+                        Toggle("CLAUDE.md", isOn: $instructionsClaudeMd)
+                        Toggle("AGENTS.md", isOn: $instructionsAgentsMd)
+
+                        HStack {
+                            Spacer()
+                            Button("Cancel") {
+                                showInstructionsPopover = false
+                            }
+                            .keyboardShortcut(.cancelAction)
+
+                            Button("Add") {
+                                BeadsService.appendBeadsInstructions(
+                                    to: cwd,
+                                    claudeMd: instructionsClaudeMd,
+                                    agentsMd: instructionsAgentsMd
+                                )
+                                showInstructionsPopover = false
+                                hasBeadsInstructions = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!instructionsClaudeMd && !instructionsAgentsMd)
+                            .keyboardShortcut(.defaultAction)
+                        }
+                    }
+                    .padding(16)
+                    .frame(width: 280)
+                }
+            }
+
             Spacer()
 
             if viewMode == .terminal {
@@ -180,17 +244,60 @@ struct BeadsViewerView: View {
     private var nativeListView: some View {
         Group {
             if filteredIssues.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal")
+                VStack(spacing: 12) {
+                    Image(systemName: hasBeadsFolder ? "checkmark.seal" : "target")
                         .font(.system(size: 28, weight: .light))
                         .foregroundStyle(.quaternary)
-                    Text(filter == .all ? "No Issues" : "No \(filter.rawValue) Issues")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text("Issues tracked in .beads/ will appear here.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
+
+                    if hasBeadsFolder {
+                        Text(filter == .all ? "No Issues" : "No \(filter.rawValue) Issues")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text("Issues tracked in .beads/ will appear here.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text("Beads Not Initialized")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text("Initialize beads to track issues, dependencies, and priorities.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 300)
+
+                        if isInitializing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button {
+                                initBeads()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle")
+                                        .font(.caption)
+                                    Text("Initialize Beads")
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(BeadsService.preferredCLIPath() == nil)
+                        }
+
+                        if BeadsService.preferredCLIPath() == nil {
+                            Text("No beads CLI installed. Install bd or br in Settings → Beads.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 300)
+                        }
+
+                        if let initError {
+                            Text(initError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 32)
@@ -206,6 +313,15 @@ struct BeadsViewerView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+                .contextMenu {
+                    if openCount > 0 {
+                        Button {
+                            closeAllOpenIssues()
+                        } label: {
+                            Label("Close All Open Issues (\(openCount))", systemImage: "checkmark.circle.fill")
+                        }
+                    }
                 }
             }
         }
@@ -290,6 +406,21 @@ struct BeadsViewerView: View {
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     expandedIssueId = expandedIssueId == issue.id ? nil : issue.id
+                }
+            }
+            .contextMenu {
+                if issue.isOpen {
+                    Button {
+                        closeIssue(issue)
+                    } label: {
+                        Label("Close Issue", systemImage: "checkmark.circle")
+                    }
+                } else {
+                    Button {
+                        reopenIssue(issue)
+                    } label: {
+                        Label("Reopen Issue", systemImage: "arrow.uturn.left.circle")
+                    }
                 }
             }
 
@@ -388,6 +519,19 @@ struct BeadsViewerView: View {
         .padding(.horizontal, 40)
         .padding(.bottom, 10)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func closeAllOpenIssues() {
+        let openIssues = issues.filter { $0.isOpen }
+        guard !openIssues.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            for issue in openIssues {
+                BeadsService.closeIssue(id: issue.id, cwd: cwd)
+            }
+            DispatchQueue.main.async {
+                reload()
+            }
+        }
     }
 
     private func closeIssue(_ issue: BeadIssue) {
@@ -614,8 +758,26 @@ struct BeadsViewerView: View {
     }
 
     private func reload() {
+        hasBeadsFolder = BeadsService.hasBeadsFolder(at: cwd)
         issues = BeadsService.loadIssues(from: cwd)
         bvInstalled = BeadsService.isBeadsViewerInstalled()
+        hasBeadsInstructions = BeadsService.hasBeadsInstructions(at: cwd)
+    }
+
+    private func initBeads() {
+        isInitializing = true
+        initError = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = BeadsService.initBeads(cwd: cwd)
+            DispatchQueue.main.async {
+                isInitializing = false
+                if result.success {
+                    reload()
+                } else {
+                    initError = "Init failed: \(result.stderr)"
+                }
+            }
+        }
     }
 
     private func installViaHomebrew() {

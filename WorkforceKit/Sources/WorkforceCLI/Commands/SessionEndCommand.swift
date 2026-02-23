@@ -16,7 +16,7 @@ struct SessionEndCommand: ParsableCommand {
         if let transcriptPath = event.transcriptPath {
             let usage = TranscriptParser.parseTokenUsage(from: transcriptPath)
             if usage.inputTokens > 0 || usage.outputTokens > 0 {
-                SocketClient.send(SocketMessage(
+                APIClient.post(SocketMessage(
                     type: .updateTokens,
                     sessionId: sessionId,
                     cwd: event.cwd,
@@ -28,7 +28,7 @@ struct SessionEndCommand: ParsableCommand {
             }
         }
 
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .deregister,
             sessionId: sessionId,
             cwd: event.cwd

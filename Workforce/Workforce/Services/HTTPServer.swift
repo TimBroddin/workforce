@@ -4,11 +4,13 @@ import Network
 final class HTTPServer {
     private var listener: NWListener?
     private let store: AgentStore
+    private let eventLog: EventLog
     private let portFilePath: String
     private let encoder: JSONEncoder
 
-    init(store: AgentStore) {
+    init(store: AgentStore, eventLog: EventLog) {
         self.store = store
+        self.eventLog = eventLog
         self.portFilePath = "/tmp/workforce-\(getuid()).port"
 
         let enc = JSONEncoder()
@@ -16,10 +18,10 @@ final class HTTPServer {
         self.encoder = enc
     }
 
-    func start() throws {
+    func start(listenOnAllInterfaces: Bool = false) throws {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = NWEndpoint.hostPort(
-            host: .ipv4(.loopback),
+            host: listenOnAllInterfaces ? "0.0.0.0" : .ipv4(.loopback),
             port: .any
         )
 
@@ -77,12 +79,19 @@ final class HTTPServer {
 
             // Check if we have the full HTTP headers (terminated by \r\n\r\n)
             if let headerEnd = self.findHeaderEnd(in: buffer) {
-                let headerData = buffer[buffer.startIndex..<headerEnd]
-                self.processRequest(Data(headerData), on: connection)
+                let headerData = Data(buffer[buffer.startIndex..<headerEnd])
+                let bodySoFar = Data(buffer[headerEnd...])
+                let expectedLength = self.parseContentLength(from: headerData)
+
+                if expectedLength > 0, bodySoFar.count < expectedLength {
+                    self.receiveBody(on: connection, headerData: headerData, accumulated: bodySoFar, expected: expectedLength)
+                } else {
+                    self.processRequest(headerData, body: bodySoFar, on: connection)
+                }
             } else if isComplete || error != nil {
                 // Connection closed before full headers received
                 if !buffer.isEmpty {
-                    self.processRequest(buffer, on: connection)
+                    self.processRequest(buffer, body: Data(), on: connection)
                 } else {
                     connection.cancel()
                 }
@@ -90,6 +99,35 @@ final class HTTPServer {
                 self.receiveRequest(on: connection, accumulated: buffer)
             }
         }
+    }
+
+    private func receiveBody(on connection: NWConnection, headerData: Data, accumulated: Data, expected: Int) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) {
+            [weak self] content, _, isComplete, error in
+            guard let self else { return }
+
+            var buffer = accumulated
+            if let content { buffer.append(content) }
+
+            if buffer.count >= expected || isComplete || error != nil {
+                self.processRequest(headerData, body: buffer, on: connection)
+            } else {
+                self.receiveBody(on: connection, headerData: headerData, accumulated: buffer, expected: expected)
+            }
+        }
+    }
+
+    private func parseContentLength(from headerData: Data) -> Int {
+        guard let headerString = String(data: headerData, encoding: .utf8) else { return 0 }
+        let lines = headerString.split(separator: "\r\n")
+        for line in lines {
+            let lower = line.lowercased()
+            if lower.hasPrefix("content-length:") {
+                let value = line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)
+                return Int(value) ?? 0
+            }
+        }
+        return 0
     }
 
     private func findHeaderEnd(in data: Data) -> Data.Index? {
@@ -108,8 +146,8 @@ final class HTTPServer {
 
     // MARK: - Request parsing & routing
 
-    private func processRequest(_ data: Data, on connection: NWConnection) {
-        guard let requestLine = parseRequestLine(from: data) else {
+    private func processRequest(_ headerData: Data, body: Data, on connection: NWConnection) {
+        guard let requestLine = parseRequestLine(from: headerData) else {
             sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"bad request"}"#)
             return
         }
@@ -117,12 +155,23 @@ final class HTTPServer {
         let method = requestLine.method
         let path = requestLine.path
 
-        guard method == "GET" else {
-            sendResponse(on: connection, status: "405 Method Not Allowed", body: #"{"error":"method not allowed"}"#)
-            return
+        switch (method, path) {
+        case ("GET", "/api/agents"):
+            handleGetAgents(on: connection)
+        case ("GET", let p) where p.hasPrefix("/api/agents/"):
+            let id = String(p.dropFirst("/api/agents/".count))
+            if id.isEmpty {
+                handleGetAgents(on: connection)
+            } else {
+                handleGetAgent(id: id, on: connection)
+            }
+        case ("POST", "/api/events"):
+            handlePostEvent(body: body, on: connection)
+        case ("OPTIONS", _):
+            sendResponse(on: connection, status: "204 No Content", body: "")
+        default:
+            sendResponse(on: connection, status: "404 Not Found", body: #"{"error":"not found"}"#)
         }
-
-        route(path: path, on: connection)
     }
 
     private struct RequestLine {
@@ -148,21 +197,6 @@ final class HTTPServer {
         }
 
         return RequestLine(method: method, path: path)
-    }
-
-    private func route(path: String, on connection: NWConnection) {
-        if path == "/api/agents" {
-            handleGetAgents(on: connection)
-        } else if path.hasPrefix("/api/agents/") {
-            let id = String(path.dropFirst("/api/agents/".count))
-            if id.isEmpty {
-                handleGetAgents(on: connection)
-            } else {
-                handleGetAgent(id: id, on: connection)
-            }
-        } else {
-            sendResponse(on: connection, status: "404 Not Found", body: #"{"error":"not found"}"#)
-        }
     }
 
     // MARK: - Handlers
@@ -192,6 +226,23 @@ final class HTTPServer {
         }
     }
 
+    private func handlePostEvent(body: Data, on connection: NWConnection) {
+        let raw = String(data: body, encoding: .utf8) ?? "<invalid utf8>"
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            let message = try decoder.decode(SocketMessage.self, from: body)
+            NSLog("[Workforce] HTTP event: type=%@ session=%@", message.type.rawValue, message.sessionId)
+            eventLog.append(message: message, rawJSON: raw)
+            store.handleMessage(message)
+            sendResponse(on: connection, status: "200 OK", body: #"{"ok":true}"#)
+        } catch {
+            NSLog("[Workforce] HTTP event decode error: %@", error.localizedDescription)
+            eventLog.append(message: nil, rawJSON: raw, error: error.localizedDescription)
+            sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"invalid message"}"#)
+        }
+    }
+
     // MARK: - Response
 
     private func sendResponse(on connection: NWConnection, status: String, body: String) {
@@ -200,6 +251,9 @@ final class HTTPServer {
             "Content-Type: application/json",
             "Content-Length: \(body.utf8.count)",
             "Connection: close",
+            "Access-Control-Allow-Origin: *",
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers: Content-Type",
             "",
             body,
         ].joined(separator: "\r\n")

@@ -6,8 +6,15 @@ struct ProjectDetailView: View {
     let eventLog: EventLog
     @State private var selectedTab = 0
     @State private var gitInfo: GitInfo?
-    @State private var hasBeads = false
+    @State private var hasBeads: Bool
     @AppStorage("showCosts") private var showCosts = true
+
+    init(cwd: String, store: AgentStore, eventLog: EventLog) {
+        self.cwd = cwd
+        self.store = store
+        self.eventLog = eventLog
+        _hasBeads = State(initialValue: BeadsService.hasBeadsFolder(at: cwd))
+    }
 
     private var projectAgents: [Agent] {
         store.sortedAgents.filter { $0.cwd == cwd }
@@ -43,6 +50,15 @@ struct ProjectDetailView: View {
             }
         }
         .onAppear { hasBeads = BeadsService.hasBeadsFolder(at: cwd) }
+        .onChange(of: cwd) { _, newCwd in
+            hasBeads = BeadsService.hasBeadsFolder(at: newCwd)
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                hasBeads = BeadsService.hasBeadsFolder(at: cwd)
+            }
+        }
     }
 
     // MARK: - Header
@@ -115,10 +131,10 @@ struct ProjectDetailView: View {
 
     private var tabBar: some View {
         HStack(spacing: 0) {
-            tabButton(title: "Stats", icon: "chart.bar.fill", tag: 0)
-            tabButton(title: "Git", icon: "arrow.triangle.branch", tag: 1)
-            tabButton(title: "Activity", icon: "bolt.fill", tag: 2)
-            tabButton(title: "Issues", icon: "target", tag: 3)
+            tabButton(title: "Beads", icon: "target", tag: 0)
+            tabButton(title: "Stats", icon: "chart.bar.fill", tag: 1)
+            tabButton(title: "Git", icon: "arrow.triangle.branch", tag: 2)
+            tabButton(title: "Activity", icon: "bolt.fill", tag: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -154,17 +170,19 @@ struct ProjectDetailView: View {
     @ViewBuilder
     private var tabContent: some View {
         switch selectedTab {
-        case 0: statsTab
-        case 1: gitTab
-        case 2: activityTab
-        case 3:
+        case 0:
             if hasBeads {
                 BeadsViewerView(cwd: cwd)
+                    .id("beads-\(cwd)")
             } else {
                 BeadsSetupView(cwd: cwd) {
                     hasBeads = BeadsService.hasBeadsFolder(at: cwd)
                 }
+                .id("setup-\(cwd)")
             }
+        case 1: statsTab
+        case 2: gitTab
+        case 3: activityTab
         default: EmptyView()
         }
     }

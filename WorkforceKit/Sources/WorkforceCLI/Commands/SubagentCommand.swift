@@ -11,7 +11,7 @@ struct SubagentStartCommand: ParsableCommand {
     func run() throws {
         let data = try readStdin()
         let event = try JSONDecoder().decode(SubagentEvent.self, from: data)
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .subagentStart,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
@@ -30,7 +30,7 @@ struct SubagentStopCommand: ParsableCommand {
     func run() throws {
         let data = try readStdin()
         let event = try JSONDecoder().decode(SubagentEvent.self, from: data)
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .subagentStop,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,

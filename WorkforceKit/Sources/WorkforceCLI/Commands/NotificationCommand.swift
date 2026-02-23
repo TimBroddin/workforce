@@ -14,7 +14,7 @@ struct NotificationCommand: ParsableCommand {
         let status: AgentStatus = event.type == "permission_prompt"
             ? .waitingForPermission
             : .waitingForInput
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .notification,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,

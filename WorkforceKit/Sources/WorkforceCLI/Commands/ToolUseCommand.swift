@@ -11,7 +11,7 @@ struct PreToolUseCommand: ParsableCommand {
     func run() throws {
         let data = try readStdin()
         let event = try JSONDecoder().decode(ToolUseEvent.self, from: data)
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .updateTool,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
@@ -30,7 +30,7 @@ struct PostToolUseCommand: ParsableCommand {
     func run() throws {
         let data = try readStdin()
         let event = try JSONDecoder().decode(ToolUseEvent.self, from: data)
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .updateTool,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
@@ -49,7 +49,7 @@ struct PostToolUseFailureCommand: ParsableCommand {
     func run() throws {
         let data = try readStdin()
         let event = try JSONDecoder().decode(ToolUseEvent.self, from: data)
-        SocketClient.send(SocketMessage(
+        APIClient.post(SocketMessage(
             type: .updateTool,
             sessionId: resolveSessionId(from: event.sessionId),
             cwd: event.cwd,
