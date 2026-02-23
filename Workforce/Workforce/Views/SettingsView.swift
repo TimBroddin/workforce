@@ -1,11 +1,31 @@
 import SwiftUI
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettingsView()
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
+                }
+
+            BeadsSettingsView()
+                .tabItem {
+                    Label("Beads", systemImage: "target")
+                }
+        }
+        .frame(width: 420, height: 480)
+    }
+}
+
+// MARK: - General Settings
+
+private struct GeneralSettingsView: View {
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
     @AppStorage("summarizationBackend") private var summarizationBackend: String = SummarizationBackend.systemDefault.rawValue
     @AppStorage("openRouterAPIKey") private var openRouterAPIKey: String = ""
     @AppStorage("openRouterModel") private var openRouterModel: String = "google/gemini-2.5-flash-lite"
+    @AppStorage("listenOnAllInterfaces") private var listenOnAllInterfaces: Bool = false
 
     @State private var cliInstalled = false
     @State private var cliNeedsUpdate = false
@@ -47,6 +67,13 @@ struct SettingsView: View {
                     TextField("Model", text: $openRouterModel)
                         .font(.caption)
                 }
+            }
+
+            Section("Network") {
+                Toggle("Listen on all interfaces", isOn: $listenOnAllInterfaces)
+                Text("When enabled, the API is accessible from other devices on your network. Requires app restart.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Workforce CLI & Hooks") {
@@ -96,7 +123,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 350)
         .task { checkStatus() }
     }
 
@@ -171,6 +197,119 @@ struct SettingsView: View {
             message = "Removed OpenCode hooks."
         } catch {
             message = "Uninstall failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Beads Settings
+
+private struct BeadsSettingsView: View {
+    @AppStorage("beadsImplementation") private var beadsImplementation: String = "br"
+
+    @State private var bdInstalled = false
+    @State private var brInstalled = false
+    @State private var bvInstalled = false
+    @State private var isInstalling: String?
+    @State private var message: String?
+
+    var body: some View {
+        Form {
+            Section("Default Implementation") {
+                Picker("CLI Tool", selection: $beadsImplementation) {
+                    ForEach(BeadsImplementation.allCases) { impl in
+                        Text(impl.displayName).tag(impl.rawValue)
+                    }
+                }
+                Text("Select which beads CLI to use for issue tracking operations.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Beads CLI (bd)") {
+                installRow(
+                    name: "bd",
+                    installed: bdInstalled,
+                    description: "Python/Go — steveyegge/beads",
+                    isInstalling: isInstalling == "bd"
+                ) {
+                    isInstalling = "bd"
+                    message = nil
+                    BeadsService.installBd { ok in
+                        isInstalling = nil
+                        bdInstalled = BeadsService.isBdInstalled()
+                        message = ok ? "bd installed successfully." : "bd installation failed."
+                    }
+                }
+            }
+
+            Section("Beads Rust CLI (br)") {
+                installRow(
+                    name: "br",
+                    installed: brInstalled,
+                    description: "Rust — Dicklesworthstone/beads_rust",
+                    isInstalling: isInstalling == "br"
+                ) {
+                    isInstalling = "br"
+                    message = nil
+                    BeadsService.installBr { ok in
+                        isInstalling = nil
+                        brInstalled = BeadsService.isBrInstalled()
+                        message = ok ? "br installed successfully." : "br installation failed."
+                    }
+                }
+            }
+
+            Section("Beads Viewer (bv)") {
+                installRow(
+                    name: "bv",
+                    installed: bvInstalled,
+                    description: "Graph-aware TUI viewer",
+                    isInstalling: isInstalling == "bv"
+                ) {
+                    isInstalling = "bv"
+                    message = nil
+                    BeadsService.installBv(viaHomebrew: true) { ok in
+                        isInstalling = nil
+                        bvInstalled = BeadsService.isBeadsViewerInstalled()
+                        message = ok ? "bv installed successfully." : "bv installation failed. Try installing manually."
+                    }
+                }
+            }
+
+            if let message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .task { checkStatus() }
+    }
+
+    private func checkStatus() {
+        bdInstalled = BeadsService.isBdInstalled()
+        brInstalled = BeadsService.isBrInstalled()
+        bvInstalled = BeadsService.isBeadsViewerInstalled()
+    }
+
+    private func installRow(name: String, installed: Bool, description: String, isInstalling: Bool, action: @escaping () -> Void) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.body.weight(.medium))
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            if isInstalling {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: installed ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(installed ? .green : .secondary)
+                Button(installed ? "Reinstall" : "Install") { action() }
+            }
         }
     }
 }
