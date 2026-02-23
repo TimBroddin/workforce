@@ -10,6 +10,13 @@ struct BeadsViewerView: View {
     @State private var bvInstalled = false
     @State private var expandedIssueId: String?
     @State private var isInstalling = false
+    @State private var operatingOnIssue: String?
+    @State private var showCreatePopover = false
+    @State private var newIssueTitle = ""
+    @State private var newIssuePriority: Int? = nil
+    @State private var newIssueType = ""
+    @State private var newIssueDescription = ""
+    @State private var isCreating = false
 
     enum IssueFilter: String, CaseIterable {
         case all = "All"
@@ -107,6 +114,22 @@ struct BeadsViewerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                 }
                 .buttonStyle(.plain)
+            }
+
+            Button {
+                showCreatePopover = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .help("Create new issue")
+            .popover(isPresented: $showCreatePopover, arrowEdge: .bottom) {
+                createIssuePopover
             }
 
             Spacer()
@@ -326,10 +349,67 @@ struct BeadsViewerView: View {
                     }
                 }
             }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                if operatingOnIssue == issue.id {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if issue.isOpen {
+                    Button {
+                        closeIssue(issue)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.caption2)
+                            Text("Close")
+                                .font(.caption.weight(.medium))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button {
+                        reopenIssue(issue)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.uturn.left.circle")
+                                .font(.caption2)
+                            Text("Reopen")
+                                .font(.caption.weight(.medium))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+            }
         }
         .padding(.horizontal, 40)
         .padding(.bottom, 10)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func closeIssue(_ issue: BeadIssue) {
+        operatingOnIssue = issue.id
+        DispatchQueue.global(qos: .userInitiated).async {
+            BeadsService.closeIssue(id: issue.id, cwd: cwd)
+            DispatchQueue.main.async {
+                operatingOnIssue = nil
+                reload()
+            }
+        }
+    }
+
+    private func reopenIssue(_ issue: BeadIssue) {
+        operatingOnIssue = issue.id
+        DispatchQueue.global(qos: .userInitiated).async {
+            BeadsService.reopenIssue(id: issue.id, cwd: cwd)
+            DispatchQueue.main.async {
+                operatingOnIssue = nil
+                reload()
+            }
+        }
     }
 
     // MARK: - Terminal View (bv)
@@ -430,6 +510,109 @@ struct BeadsViewerView: View {
 
     // MARK: - Helpers
 
+    private var createIssuePopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New Issue")
+                .font(.headline)
+
+            TextField("Title", text: $newIssueTitle)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 12) {
+                Picker("Priority", selection: $newIssuePriority) {
+                    Text("None").tag(nil as Int?)
+                    Text("P1 High").tag(1 as Int?)
+                    Text("P2 Medium").tag(2 as Int?)
+                    Text("P3 Low").tag(3 as Int?)
+                }
+                .frame(maxWidth: 140)
+
+                Picker("Type", selection: $newIssueType) {
+                    Text("None").tag("")
+                    Text("Task").tag("task")
+                    Text("Bug").tag("bug")
+                    Text("Feature").tag("feature")
+                }
+                .frame(maxWidth: 140)
+            }
+
+            TextEditor(text: $newIssueDescription)
+                .font(.caption)
+                .frame(height: 60)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                )
+                .overlay(alignment: .topLeading) {
+                    if newIssueDescription.isEmpty {
+                        Text("Description (optional)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    resetCreateForm()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button {
+                    createIssue()
+                } label: {
+                    if isCreating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Create")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(newIssueTitle.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    private func createIssue() {
+        let title = newIssueTitle.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return }
+
+        isCreating = true
+        let priority = newIssuePriority
+        let type = newIssueType
+        let description = newIssueDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            BeadsService.createIssue(
+                title: title,
+                priority: priority,
+                type: type.isEmpty ? nil : type,
+                description: description.isEmpty ? nil : description,
+                cwd: cwd
+            )
+            DispatchQueue.main.async {
+                isCreating = false
+                resetCreateForm()
+                reload()
+            }
+        }
+    }
+
+    private func resetCreateForm() {
+        showCreatePopover = false
+        newIssueTitle = ""
+        newIssuePriority = nil
+        newIssueType = ""
+        newIssueDescription = ""
+    }
+
     private func reload() {
         issues = BeadsService.loadIssues(from: cwd)
         bvInstalled = BeadsService.isBeadsViewerInstalled()
@@ -437,54 +620,19 @@ struct BeadsViewerView: View {
 
     private func installViaHomebrew() {
         isInstalling = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            let brewPath = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-                .first { FileManager.default.isExecutableFile(atPath: $0) }
-            guard let brew = brewPath else {
-                DispatchQueue.main.async {
-                    isInstalling = false
-                }
-                return
-            }
-            process.executableURL = URL(fileURLWithPath: brew)
-            process.arguments = ["install", "dicklesworthstone/tap/bv"]
-            process.standardOutput = Pipe()
-            process.standardError = Pipe()
-            try? process.run()
-            process.waitUntilExit()
-
-            DispatchQueue.main.async {
-                isInstalling = false
-                bvInstalled = BeadsService.isBeadsViewerInstalled()
-                if bvInstalled {
-                    viewMode = .terminal
-                }
-            }
+        BeadsService.installBv(viaHomebrew: true) { ok in
+            isInstalling = false
+            bvInstalled = BeadsService.isBeadsViewerInstalled()
+            if bvInstalled { viewMode = .terminal }
         }
     }
 
     private func installViaScript() {
         isInstalling = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = [
-                "-c",
-                "curl -fsSL 'https://raw.githubusercontent.com/Dicklesworthstone/beads_viewer/main/install.sh' | bash",
-            ]
-            process.standardOutput = Pipe()
-            process.standardError = Pipe()
-            try? process.run()
-            process.waitUntilExit()
-
-            DispatchQueue.main.async {
-                isInstalling = false
-                bvInstalled = BeadsService.isBeadsViewerInstalled()
-                if bvInstalled {
-                    viewMode = .terminal
-                }
-            }
+        BeadsService.installBv(viaHomebrew: false) { ok in
+            isInstalling = false
+            bvInstalled = BeadsService.isBeadsViewerInstalled()
+            if bvInstalled { viewMode = .terminal }
         }
     }
 
