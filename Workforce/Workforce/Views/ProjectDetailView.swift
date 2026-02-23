@@ -118,9 +118,7 @@ struct ProjectDetailView: View {
             tabButton(title: "Stats", icon: "chart.bar.fill", tag: 0)
             tabButton(title: "Git", icon: "arrow.triangle.branch", tag: 1)
             tabButton(title: "Activity", icon: "bolt.fill", tag: 2)
-            if hasBeads {
-                tabButton(title: "Issues", icon: "target", tag: 3)
-            }
+            tabButton(title: "Issues", icon: "target", tag: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -159,7 +157,14 @@ struct ProjectDetailView: View {
         case 0: statsTab
         case 1: gitTab
         case 2: activityTab
-        case 3: BeadsViewerView(cwd: cwd)
+        case 3:
+            if hasBeads {
+                BeadsViewerView(cwd: cwd)
+            } else {
+                BeadsSetupView(cwd: cwd) {
+                    hasBeads = BeadsService.hasBeadsFolder(at: cwd)
+                }
+            }
         default: EmptyView()
         }
     }
