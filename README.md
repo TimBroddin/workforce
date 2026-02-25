@@ -12,37 +12,44 @@ Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs
 
 - **Agent Dashboard** — See all running agents at a glance with live status indicators (active, idle, waiting for input/permission)
 - **Embedded Terminals** — View agent terminal sessions directly in the app via xterm.js
-- **Smart Notifications** — Get macOS alerts when agents need input, with AI-generated transcript summaries (via Apple Intelligence or OpenRouter)
+- **Smart Notifications** — Get macOS alerts when agents need input, with optional AI-generated transcript summaries (via Apple Intelligence or OpenRouter, or disabled entirely)
 - **Cost Tracking** — Monitor token usage and estimated costs per agent, per project folder, and across all sessions
 - **Project Detail View** — Drill into projects with stats, git info, and recent activity
 - **Event Viewer** — Debug hook messages with a real-time event log and type filtering
 - **Tmux Integration** — Agents run in tmux sessions that persist independently of the app
 - **Agent Management** — Spawn new agents, kill sessions, open in your preferred terminal or IDE
+- **Remote Hosts** — Connect to remote machines over SSH with collapsible folder views, per-folder agent spawning, and full remote agent management via the HTTP API
+- **Connected Clients** — See which clients are connected to your workforce instance
 - **CLI Tools** — List agents, attach to sessions, and browse with an interactive TUI — works over SSH too
 
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Workforce macOS App                       │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────────┐  │
-│  │ Agent    │  │ Notification │  │ HTTP API Server       │  │
-│  │ Store    │  │ Manager      │  │ GET /api/agents       │  │
-│  │          │  │ + Summarizer │  │ GET /api/agents/:id   │  │
-│  └────▲─────┘  └──────────────┘  └───────────▲───────────┘  │
-│       │                                      │              │
-│       │  Unix Socket                         │  HTTP        │
-│       │  /tmp/workforce-<uid>.sock           │  localhost   │
-└───────┼──────────────────────────────────────┼──────────────┘
-        │                                      │
-  ┌─────┴─────────────┐              ┌─────────┴─────────┐
-  │ workforce CLI      │              │ workforce list    │
-  │ (hook handler)     │              │ workforce attach  │
-  │                    │              │ workforce tui     │
-  │ Receives events    │              │                   │
-  │ from Claude Code   │              │ Queries agent     │
-  │ via stdin JSON     │              │ state via HTTP    │
-  └────────▲───────────┘              └───────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                      Workforce macOS App                         │
+│  ┌──────────┐  ┌──────────────┐  ┌────────────────────────────┐  │
+│  │ Agent    │  │ Notification │  │ HTTP API Server            │  │
+│  │ Store    │  │ Manager      │  │ GET    /api/agents         │  │
+│  │          │  │ + Summarizer │  │ GET    /api/agents/:id     │  │
+│  │          │  │              │  │ POST   /api/spawn          │  │
+│  │          │  │              │  │ DELETE /api/agents/:id     │  │
+│  │          │  │              │  │ POST   /api/events         │  │
+│  │          │  │              │  │ POST   /api/clients/register│  │
+│  │          │  │              │  │ GET    /api/clients        │  │
+│  └────▲─────┘  └──────────────┘  └──────────────▲─────────────┘  │
+│       │                                         │                │
+│       │  Unix Socket                            │  HTTP          │
+│       │  /tmp/workforce-<uid>.sock              │  localhost     │
+└───────┼─────────────────────────────────────────┼────────────────┘
+        │                                         │
+  ┌─────┴─────────────┐              ┌────────────┴────────────┐
+  │ workforce CLI      │              │ workforce list          │
+  │ (hook handler)     │              │ workforce attach        │
+  │                    │              │ workforce tui           │
+  │ Receives events    │              │                         │
+  │ from Claude Code   │              │ Queries agent state,    │
+  │ via stdin JSON     │              │ spawns & deletes agents │
+  └────────▲───────────┘              └────────────────────────┘
            │
   ┌────────┴───────────┐
   │ Claude Code /      │
@@ -59,7 +66,7 @@ Built with deep integration for [Claude Code](https://docs.anthropic.com/en/docs
 
 When you run an agent with `workforce`, it wraps the session in tmux for persistence. Claude Code hooks fire events (tool use, status changes, notifications) as JSON to the `workforce` CLI, which forwards them over a Unix socket to the app. The app updates the dashboard in real-time and sends macOS notifications when agents need your attention.
 
-The app also runs a lightweight HTTP API on localhost, which the CLI uses to query agent state for `list`, `attach`, and `tui` commands.
+The app also runs a lightweight HTTP API on localhost, which the CLI uses to query agent state for `list`, `attach`, and `tui` commands. Remote agents are spawned and deleted through the same API via SSH tunnels.
 
 ## Requirements
 
@@ -144,8 +151,9 @@ This makes Workforce great for:
 
 When an agent needs your input, Workforce can generate a short summary of what the agent has been working on, so you know the context before switching to it.
 
-The notification shows Claude's message as the title, with an AI-generated transcript summary as the body. You can choose between two summarization backends in Settings:
+The notification shows Claude's message as the title, with an AI-generated transcript summary as the body. You can choose between summarization backends in Settings:
 
+- **Disabled** — No AI summaries, just the agent title in the notification body
 - **Apple Intelligence** — Uses the on-device Foundation Models framework (requires macOS 26+ and Apple Intelligence enabled)
 - **OpenRouter** — Uses any model via the OpenRouter API (default: `google/gemini-2.5-flash-lite`)
 
