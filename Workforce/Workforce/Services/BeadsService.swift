@@ -27,7 +27,8 @@ struct BeadIssue: Codable, Identifiable {
         case dependencies
     }
 
-    var isOpen: Bool { status == "open" }
+    var isOpen: Bool { status == "open" || status == "in_progress" }
+    var isInProgress: Bool { status == "in_progress" }
 
     var priorityLabel: String {
         switch priority {
@@ -228,6 +229,10 @@ enum BeadsService {
         runCLI(arguments: ["reopen", id], cwd: cwd)
     }
 
+    static func startProgress(id: String, cwd: String) -> CLIResult {
+        runCLI(arguments: ["update", id, "-s", "in_progress"], cwd: cwd)
+    }
+
     // MARK: - Install Scripts
 
     static func installBd(completion: @escaping (Bool) -> Void) {
@@ -287,13 +292,53 @@ enum BeadsService {
 
     // MARK: - CLAUDE.md / AGENTS.md Instructions
 
-    private static let beadsMarker = "<!-- workforce:beads -->"
+    private static let beadsMarkerPrefix = "<!-- workforce:beads"
+    private static let beadsMarkerVersion = 2
+    private static var beadsMarker: String { "<!-- workforce:beads:v\(beadsMarkerVersion) -->" }
+
+    /// Returns the version of the beads instructions in a file, or nil if not present.
+    private static func beadsInstructionVersion(in content: String) -> Int? {
+        // Match versioned marker: <!-- workforce:beads:v2 -->
+        if let range = content.range(of: #"<!-- workforce:beads:v(\d+) -->"#, options: .regularExpression) {
+            let match = content[range]
+            if let numRange = match.range(of: #"\d+"#, options: .regularExpression) {
+                return Int(match[numRange])
+            }
+        }
+        // Match legacy unversioned marker: <!-- workforce:beads -->
+        if content.contains("<!-- workforce:beads -->") {
+            return 1
+        }
+        return nil
+    }
+
+    /// Replaces the beads instructions block (between markers) with the current version.
+    private static func replaceBeadsBlock(in content: String, with block: String) -> String {
+        // Match from any versioned or unversioned opening marker to closing marker
+        let pattern = #"<!-- workforce:beads(?::v\d+)? -->[\s\S]*?<!-- workforce:beads(?::v\d+)? -->"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return content }
+        let range = NSRange(content.startIndex..., in: content)
+        return regex.stringByReplacingMatches(in: content, range: range, withTemplate: block.trimmingCharacters(in: .newlines))
+    }
 
     static func hasBeadsInstructions(at cwd: String) -> Bool {
         for filename in ["CLAUDE.md", "AGENTS.md"] {
             let path = (cwd as NSString).appendingPathComponent(filename)
             if let content = try? String(contentsOfFile: path, encoding: .utf8),
-               content.contains(beadsMarker) {
+               beadsInstructionVersion(in: content) != nil {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Returns true if any file has outdated beads instructions.
+    static func hasOutdatedBeadsInstructions(at cwd: String) -> Bool {
+        for filename in ["CLAUDE.md", "AGENTS.md"] {
+            let path = (cwd as NSString).appendingPathComponent(filename)
+            if let content = try? String(contentsOfFile: path, encoding: .utf8),
+               let version = beadsInstructionVersion(in: content),
+               version < beadsMarkerVersion {
                 return true
             }
         }
@@ -309,7 +354,9 @@ enum BeadsService {
         \(beadsMarker)
         ## Beads Issue Tracking
 
-        Use `\(cmd)` for issue tracking in this project.
+        **IMPORTANT: Before starting ANY work, create beads issues with `\(cmd) create` to track the task. Always check
+        `\(cmd) list` and `\(cmd) ready` first to see if there are existing issues to work on.**
+
         - `\(cmd) list` — list open issues
         - `\(cmd) ready` — show unblocked issues ready for work
         - `\(cmd) create "title" -p <priority>` — create an issue
@@ -325,9 +372,14 @@ enum BeadsService {
         for filename in filenames {
             let path = (cwd as NSString).appendingPathComponent(filename)
             if FileManager.default.fileExists(atPath: path) {
-                if let content = try? String(contentsOfFile: path, encoding: .utf8),
-                   content.contains(beadsMarker) {
-                    continue
+                if let content = try? String(contentsOfFile: path, encoding: .utf8) {
+                    if let version = beadsInstructionVersion(in: content) {
+                        if version >= beadsMarkerVersion { continue }
+                        // Replace outdated block
+                        let updated = replaceBeadsBlock(in: content, with: block.trimmingCharacters(in: .newlines))
+                        try? updated.write(toFile: path, atomically: true, encoding: .utf8)
+                        continue
+                    }
                 }
                 if let handle = FileHandle(forWritingAtPath: path) {
                     handle.seekToEndOfFile()

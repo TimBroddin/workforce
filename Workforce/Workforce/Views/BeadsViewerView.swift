@@ -18,6 +18,7 @@ struct BeadsViewerView: View {
     @State private var newIssueDescription = ""
     @State private var isCreating = false
     @State private var hasBeadsInstructions = false
+    @State private var hasOutdatedInstructions = false
     @State private var hasBeadsFolder = true
     @State private var isInitializing = false
     @State private var initError: String?
@@ -28,6 +29,7 @@ struct BeadsViewerView: View {
     enum IssueFilter: String, CaseIterable {
         case all = "All"
         case open = "Open"
+        case inProgress = "In Progress"
         case closed = "Closed"
     }
 
@@ -42,20 +44,22 @@ struct BeadsViewerView: View {
         switch filter {
         case .all: filtered = issues
         case .open: filtered = issues.filter { $0.isOpen }
+        case .inProgress: filtered = issues.filter { $0.isInProgress }
         case .closed: filtered = issues.filter { !$0.isOpen }
         }
         return filtered.sorted { lhs, rhs in
-            // Open before closed
+            // In progress before open, open before closed
+            if lhs.isInProgress != rhs.isInProgress { return lhs.isInProgress }
             if lhs.isOpen != rhs.isOpen { return lhs.isOpen }
-            // Higher priority (lower number) first
-            let lp = lhs.priority ?? 99
-            let rp = rhs.priority ?? 99
-            if lp != rp { return lp < rp }
-            return lhs.title < rhs.title
+            // Most recent first
+            let ld = lhs.updatedAt ?? lhs.createdAt ?? .distantPast
+            let rd = rhs.updatedAt ?? rhs.createdAt ?? .distantPast
+            return ld > rd
         }
     }
 
     private var openCount: Int { issues.filter { $0.isOpen }.count }
+    private var inProgressCount: Int { issues.filter { $0.isInProgress }.count }
     private var closedCount: Int { issues.filter { !$0.isOpen }.count }
 
     var body: some View {
@@ -101,6 +105,13 @@ struct BeadsViewerView: View {
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(Capsule().fill(.orange))
+                        } else if f == .inProgress {
+                            Text("\(inProgressCount)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(.blue))
                         } else if f == .closed {
                             Text("\(closedCount)")
                                 .font(.caption2.weight(.semibold))
@@ -139,36 +150,43 @@ struct BeadsViewerView: View {
                 createIssuePopover
             }
 
-            if !hasBeadsInstructions {
+            if !hasBeadsInstructions || hasOutdatedInstructions {
                 Button {
                     showInstructionsPopover = true
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "doc.badge.plus")
+                        Image(systemName: hasOutdatedInstructions ? "arrow.triangle.2.circlepath" : "doc.badge.plus")
                             .font(.caption2)
-                        Text("Add instructions")
+                        Text(hasOutdatedInstructions ? "Update instructions" : "Add instructions")
                             .font(.caption.weight(.medium))
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hasOutdatedInstructions ? .orange : .secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                 }
                 .buttonStyle(.plain)
-                .help("Add beads usage instructions to CLAUDE.md / AGENTS.md")
+                .help(hasOutdatedInstructions ? "Update beads instructions to latest version" : "Add beads usage instructions to CLAUDE.md / AGENTS.md")
                 .popover(isPresented: $showInstructionsPopover, arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Add Beads Instructions")
+                        Text(hasOutdatedInstructions ? "Update Beads Instructions" : "Add Beads Instructions")
                             .font(.headline)
 
-                        Text("Add beads CLI usage instructions to agent config files in this project.")
+                        Text(hasOutdatedInstructions
+                            ? "Update beads CLI instructions to the latest version in agent config files."
+                            : "Add beads CLI usage instructions to agent config files in this project.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: 240)
 
                         Toggle("CLAUDE.md", isOn: $instructionsClaudeMd)
                         Toggle("AGENTS.md", isOn: $instructionsAgentsMd)
+
+                        Text("Tip: Even with instructions in place, agents can be finicky about using beads. Adding \"use beads\" to your prompt in addition to agent rules will give better results.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: 240)
 
                         HStack {
                             Spacer()
@@ -177,7 +195,7 @@ struct BeadsViewerView: View {
                             }
                             .keyboardShortcut(.cancelAction)
 
-                            Button("Add") {
+                            Button(hasOutdatedInstructions ? "Update" : "Add") {
                                 BeadsService.appendBeadsInstructions(
                                     to: cwd,
                                     claudeMd: instructionsClaudeMd,
@@ -185,6 +203,7 @@ struct BeadsViewerView: View {
                                 )
                                 showInstructionsPopover = false
                                 hasBeadsInstructions = true
+                                hasOutdatedInstructions = false
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(!instructionsClaudeMd && !instructionsAgentsMd)
@@ -332,9 +351,9 @@ struct BeadsViewerView: View {
             // Main row
             HStack(alignment: .top, spacing: 8) {
                 // Status indicator
-                Image(systemName: issue.isOpen ? "circle" : "checkmark.circle.fill")
+                Image(systemName: issue.isInProgress ? "circle.dotted.circle" : issue.isOpen ? "circle" : "checkmark.circle.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(issue.isOpen ? .orange : .green)
+                    .foregroundStyle(issue.isInProgress ? .blue : issue.isOpen ? .orange : .green)
                     .frame(width: 20)
                     .padding(.top, 2)
 
@@ -409,6 +428,13 @@ struct BeadsViewerView: View {
                 }
             }
             .contextMenu {
+                if issue.isOpen && !issue.isInProgress {
+                    Button {
+                        startProgress(issue)
+                    } label: {
+                        Label("Start Progress", systemImage: "play.circle")
+                    }
+                }
                 if issue.isOpen {
                     Button {
                         closeIssue(issue)
@@ -488,6 +514,20 @@ struct BeadsViewerView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else if issue.isOpen {
+                    if !issue.isInProgress {
+                        Button {
+                            startProgress(issue)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "play.circle")
+                                    .font(.caption2)
+                                Text("Start")
+                                    .font(.caption.weight(.medium))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
                     Button {
                         closeIssue(issue)
                     } label: {
@@ -529,6 +569,17 @@ struct BeadsViewerView: View {
                 BeadsService.closeIssue(id: issue.id, cwd: cwd)
             }
             DispatchQueue.main.async {
+                reload()
+            }
+        }
+    }
+
+    private func startProgress(_ issue: BeadIssue) {
+        operatingOnIssue = issue.id
+        DispatchQueue.global(qos: .userInitiated).async {
+            BeadsService.startProgress(id: issue.id, cwd: cwd)
+            DispatchQueue.main.async {
+                operatingOnIssue = nil
                 reload()
             }
         }
@@ -762,6 +813,7 @@ struct BeadsViewerView: View {
         issues = BeadsService.loadIssues(from: cwd)
         bvInstalled = BeadsService.isBeadsViewerInstalled()
         hasBeadsInstructions = BeadsService.hasBeadsInstructions(at: cwd)
+        hasOutdatedInstructions = BeadsService.hasOutdatedBeadsInstructions(at: cwd)
     }
 
     private func initBeads() {
