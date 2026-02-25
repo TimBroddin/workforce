@@ -340,43 +340,51 @@ final class RemoteHostManager {
     // MARK: - Spawn remote agent
 
     func spawnAgent(host: RemoteHost, cwd: String, agentType: String = "claude", completion: @escaping (Result<String, Error>) -> Void) {
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let sessionName = "workforce-\(timestamp)"
-
-        // Wrap in a login shell so PATH includes Homebrew/Linuxbrew paths where tmux lives.
-        // SSH concatenates all trailing args into one command string on the remote.
-        let tmuxCmd = "tmux new-session -d -s \(sessionName) -c '\(cwd)' -e WORKFORCE_SESSION=\(sessionName) -- zsh -lc '\(agentType)'"
-        let remoteCommand = "bash -lc \"\(tmuxCmd.replacingOccurrences(of: "\"", with: "\\\""))\""
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: sshPath)
-        process.arguments = host.sshBaseArgs + [remoteCommand]
-
-        let errPipe = Pipe()
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errPipe
-
-        do {
-            try process.run()
-        } catch {
-            completion(.failure(error))
+        // Use the HTTP API on the remote workforce server (via SSH tunnel) so that
+        // the remote server resolves tmux path from its own environment.
+        guard let conn = connections[host.id], conn.status == .connected, conn.localPort > 0 else {
+            completion(.failure(NSError(domain: "Workforce", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Not connected to remote host"])))
             return
         }
 
-        DispatchQueue.global().async {
-            process.waitUntilExit()
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let errMsg = String(data: errData, encoding: .utf8) ?? ""
-
-            DispatchQueue.main.async {
-                if process.terminationStatus == 0 {
-                    completion(.success(sessionName))
-                } else {
-                    completion(.failure(NSError(domain: "SSH", code: Int(process.terminationStatus),
-                        userInfo: [NSLocalizedDescriptionKey: errMsg.isEmpty ? "Remote command failed" : errMsg])))
-                }
-            }
+        guard let url = URL(string: "http://localhost:\(conn.localPort)/api/spawn") else {
+            completion(.failure(NSError(domain: "Workforce", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
+            return
         }
+
+        let body: [String: String] = ["cwd": cwd, "agentType": agentType]
+        guard let bodyData = try? JSONEncoder().encode(body) else {
+            completion(.failure(NSError(domain: "Workforce", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to encode request"])))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = bodyData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error {
+                    completion(.failure(error))
+                    return
+                }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let sessionId = json["sessionId"] as? String else {
+                    let errMsg = data.flatMap { String(data: $0, encoding: .utf8) } ?? "Unknown error"
+                    completion(.failure(NSError(domain: "Workforce", code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: errMsg])))
+                    return
+                }
+                completion(.success(sessionId))
+            }
+        }.resume()
     }
 
     // MARK: - Utilities

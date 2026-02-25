@@ -173,6 +173,8 @@ final class HTTPServer {
             handleRegisterClient(body: body, on: connection)
         case ("GET", "/api/clients"):
             handleGetClients(on: connection)
+        case ("POST", "/api/spawn"):
+            handleSpawnAgent(body: body, on: connection)
         case ("OPTIONS", _):
             sendResponse(on: connection, status: "204 No Content", body: "")
         default:
@@ -273,6 +275,24 @@ final class HTTPServer {
             sendResponse(on: connection, status: "200 OK", body: body)
         } catch {
             sendResponse(on: connection, status: "500 Internal Server Error", body: #"{"error":"encoding failed"}"#)
+        }
+    }
+
+    private func handleSpawnAgent(body: Data, on connection: NWConnection) {
+        struct SpawnRequest: Decodable {
+            let cwd: String?
+            let agentType: String?
+        }
+
+        let decoder = JSONDecoder()
+        let request = try? decoder.decode(SpawnRequest.self, from: body)
+        let cwd = request?.cwd ?? "~"
+        let agentType = request?.agentType ?? "claude"
+
+        if let sessionId = store.spawnAgent(cwd: cwd, agentType: agentType) {
+            sendResponse(on: connection, status: "200 OK", body: #"{"ok":true,"sessionId":"\#(sessionId)"}"#)
+        } else {
+            sendResponse(on: connection, status: "500 Internal Server Error", body: #"{"error":"spawn failed"}"#)
         }
     }
 
