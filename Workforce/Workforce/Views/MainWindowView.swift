@@ -801,8 +801,14 @@ struct MainWindowView: View {
         Group {
             if let agent = selectedAgent {
                 if let tmuxSession = agent.tmuxSession {
-                    TerminalRepresentable(sessionName: tmuxSession)
-                        .id(agent.sessionId)
+                    TerminalRepresentable(
+                        sessionName: tmuxSession,
+                        host: agent.host,
+                        sshPort: agent.host != nil
+                            ? remoteHostManager.hosts.first(where: { $0.sshDestination == agent.host })?.sshPort
+                            : nil
+                    )
+                        .id(agent.host != nil ? "\(agent.host!)-\(agent.sessionId)" : agent.sessionId)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 8) {

@@ -85,6 +85,14 @@ class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
 /// Attaches to a tmux session by spawning `tmux attach -t <sessionName>` via a PTY.
 struct TerminalRepresentable: NSViewRepresentable {
     let sessionName: String
+    let host: String?
+    let sshPort: Int?
+
+    init(sessionName: String, host: String? = nil, sshPort: Int? = nil) {
+        self.sessionName = sessionName
+        self.host = host
+        self.sshPort = sshPort
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -110,7 +118,7 @@ struct TerminalRepresentable: NSViewRepresentable {
         context.coordinator.webView = webView
 
         webView.load(URLRequest(url: URL(string: "workforce://terminal.html")!))
-        context.coordinator.startPTY(sessionName: sessionName)
+        context.coordinator.startPTY(sessionName: sessionName, host: host, sshPort: sshPort)
 
         return webView
     }
@@ -134,11 +142,27 @@ struct TerminalRepresentable: NSViewRepresentable {
         private var readSource: DispatchSourceRead?
         private var isStopped = false
 
-        func startPTY(sessionName: String) {
+        func startPTY(sessionName: String, host: String? = nil, sshPort: Int? = nil) {
             let tmuxPath = findExecutable("tmux") ?? "/opt/homebrew/bin/tmux"
 
-            // -u forces UTF-8 mode for proper powerline glyph rendering
-            let args = [tmuxPath, "-u", "attach", "-t", sessionName]
+            let execPath: String
+            let args: [String]
+
+            if let host {
+                // Remote: ssh -t [-p port] user@host tmux -u attach -t session
+                let sshPath = "/usr/bin/ssh"
+                var sshArgs = [sshPath, "-t"]
+                if let port = sshPort, port != 22 {
+                    sshArgs += ["-p", "\(port)"]
+                }
+                sshArgs += [host, tmuxPath, "-u", "attach", "-t", sessionName]
+                execPath = sshPath
+                args = sshArgs
+            } else {
+                // Local: tmux -u attach -t session
+                execPath = tmuxPath
+                args = [tmuxPath, "-u", "attach", "-t", sessionName]
+            }
 
             let cArgs = args.map { strdup($0) } + [nil]
             defer { cArgs.forEach { if let p = $0 { free(p) } } }
@@ -154,7 +178,7 @@ struct TerminalRepresentable: NSViewRepresentable {
             }
 
             if pid == 0 {
-                // Child process — exec tmux
+                // Child process — exec tmux (local) or ssh (remote)
                 for (key, value) in ProcessInfo.processInfo.environment {
                     setenv(key, value, 1)
                 }
@@ -167,7 +191,7 @@ struct TerminalRepresentable: NSViewRepresentable {
                     setenv("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", 1)
                 }
 
-                execv(tmuxPath, cArgs.map { UnsafeMutablePointer(mutating: $0) })
+                execv(execPath, cArgs.map { UnsafeMutablePointer(mutating: $0) })
                 _exit(1)
             }
 
