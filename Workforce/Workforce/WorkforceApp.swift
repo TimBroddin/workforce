@@ -11,11 +11,12 @@ struct WorkforceApp: App {
     @State private var eventLog = EventLog()
     @State private var httpServer: HTTPServer?
     @State private var remoteHostManager: RemoteHostManager?
+    @State private var clientRegistry: ClientRegistry?
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window("Workforce", id: "main") {
-            MainWindowView(store: agentStore, eventLog: eventLog, remoteHostManager: remoteHostManager!)
+            MainWindowView(store: agentStore, eventLog: eventLog, remoteHostManager: remoteHostManager!, clientRegistry: clientRegistry!)
         }
         .commands {
             CommandGroup(after: .windowArrangement) {
@@ -52,6 +53,7 @@ struct WorkforceApp: App {
         _eventLog = State(initialValue: log)
 
         let registry = ClientRegistry()
+        _clientRegistry = State(initialValue: registry)
         let listenOnAll = UserDefaults.standard.bool(forKey: "listenOnAllInterfaces")
         let http = HTTPServer(store: store, eventLog: log, clientRegistry: registry)
         _httpServer = State(initialValue: http)
@@ -69,6 +71,7 @@ struct WorkforceApp: App {
             queue: .main
         ) { _ in
             http.stop()
+            registry.stopPruning()
             remoteHosts.disconnectAll()
         }
 
