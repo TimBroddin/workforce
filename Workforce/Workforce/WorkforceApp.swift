@@ -10,10 +10,12 @@ struct WorkforceApp: App {
     @State private var agentStore = AgentStore()
     @State private var eventLog = EventLog()
     @State private var httpServer: HTTPServer?
+    @State private var remoteHostManager: RemoteHostManager?
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window("Workforce", id: "main") {
+            // TODO: pass remoteHostManager to views
             MainWindowView(store: agentStore, eventLog: eventLog)
         }
         .commands {
@@ -35,6 +37,7 @@ struct WorkforceApp: App {
         }
 
         Settings {
+            // TODO: pass remoteHostManager to SettingsView
             SettingsView()
         }
     }
@@ -55,12 +58,18 @@ struct WorkforceApp: App {
         _httpServer = State(initialValue: http)
         try? http.start(listenOnAllInterfaces: listenOnAll)
 
+        let remoteHosts = RemoteHostManager()
+        remoteHosts.load()
+        remoteHosts.connectAll()
+        _remoteHostManager = State(initialValue: remoteHosts)
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
         ) { _ in
             http.stop()
+            remoteHosts.disconnectAll()
         }
 
         NotificationManager.shared.requestPermission()
