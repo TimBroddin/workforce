@@ -51,10 +51,12 @@ struct WorkforceApp: App {
         let log = EventLog()
         _eventLog = State(initialValue: log)
 
+        let registry = ClientRegistry()
         let listenOnAll = UserDefaults.standard.bool(forKey: "listenOnAllInterfaces")
-        let http = HTTPServer(store: store, eventLog: log)
+        let http = HTTPServer(store: store, eventLog: log, clientRegistry: registry)
         _httpServer = State(initialValue: http)
         try? http.start(listenOnAllInterfaces: listenOnAll)
+        registry.startPruning()
 
         let remoteHosts = RemoteHostManager()
         remoteHosts.load()

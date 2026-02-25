@@ -5,12 +5,14 @@ final class HTTPServer {
     private var listener: NWListener?
     private let store: AgentStore
     private let eventLog: EventLog
+    private let clientRegistry: ClientRegistry
     private let portFilePath: String
     private let encoder: JSONEncoder
 
-    init(store: AgentStore, eventLog: EventLog) {
+    init(store: AgentStore, eventLog: EventLog, clientRegistry: ClientRegistry) {
         self.store = store
         self.eventLog = eventLog
+        self.clientRegistry = clientRegistry
         self.portFilePath = "/tmp/workforce-\(getuid()).port"
 
         let enc = JSONEncoder()
@@ -167,6 +169,10 @@ final class HTTPServer {
             }
         case ("POST", "/api/events"):
             handlePostEvent(body: body, on: connection)
+        case ("POST", "/api/clients/register"):
+            handleRegisterClient(body: body, on: connection)
+        case ("GET", "/api/clients"):
+            handleGetClients(on: connection)
         case ("OPTIONS", _):
             sendResponse(on: connection, status: "204 No Content", body: "")
         default:
@@ -240,6 +246,33 @@ final class HTTPServer {
             NSLog("[Workforce] HTTP event decode error: %@", error.localizedDescription)
             eventLog.append(message: nil, rawJSON: raw, error: error.localizedDescription)
             sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"invalid message"}"#)
+        }
+    }
+
+    private func handleRegisterClient(body: Data, on connection: NWConnection) {
+        struct RegisterRequest: Decodable {
+            let clientId: String
+            let hostname: String
+            let user: String
+        }
+
+        let decoder = JSONDecoder()
+        guard let request = try? decoder.decode(RegisterRequest.self, from: body) else {
+            sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"invalid body"}"#)
+            return
+        }
+
+        clientRegistry.register(clientId: request.clientId, hostname: request.hostname, user: request.user)
+        sendResponse(on: connection, status: "200 OK", body: #"{"ok":true}"#)
+    }
+
+    private func handleGetClients(on connection: NWConnection) {
+        do {
+            let data = try encoder.encode(clientRegistry.connectedClients)
+            let body = String(data: data, encoding: .utf8) ?? "[]"
+            sendResponse(on: connection, status: "200 OK", body: body)
+        } catch {
+            sendResponse(on: connection, status: "500 Internal Server Error", body: #"{"error":"encoding failed"}"#)
         }
     }
 
