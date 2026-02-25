@@ -310,6 +310,10 @@ struct MainWindowView: View {
                     }
                 }
             }
+
+            if sidebarTab == 1 {
+                connectedClientsSection
+            }
         }
         .sheet(isPresented: $showAddHostSheet) {
             RemoteHostEditSheet(manager: remoteHostManager, host: nil)
@@ -403,48 +407,55 @@ struct MainWindowView: View {
                 }
             }
         }
-
-        // Connected clients section
-        let connectedClients = clientRegistry.connectedClients
-        if !connectedClients.isEmpty {
-            Spacer().frame(height: 16)
-
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Connected Clients")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(connectedClients.count)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-
-            ForEach(connectedClients) { client in
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(.green)
-                        .frame(width: 8, height: 8)
-                    Text(client.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-            }
-        }
     }
 
+
+    // MARK: - Connected Clients (pinned to bottom)
+
+    @ViewBuilder
+    private var connectedClientsSection: some View {
+        let connectedClients = clientRegistry.connectedClients
+        if !connectedClients.isEmpty {
+            Divider()
+
+            VStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.2.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Connected Clients")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(connectedClients.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+
+                ForEach(connectedClients) { client in
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 8, height: 8)
+                        Text(client.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(.bottom, 4)
+        }
+    }
 
     // MARK: - Local Agent Row
 
