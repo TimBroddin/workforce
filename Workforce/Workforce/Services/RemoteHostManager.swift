@@ -343,7 +343,7 @@ final class RemoteHostManager {
         let timestamp = Int(Date().timeIntervalSince1970)
         let sessionName = "workforce-\(timestamp)"
 
-        let remoteCommand = "tmux new-session -d -s \(sessionName) -c '\(cwd)' -e WORKFORCE_SESSION=\(sessionName) -- zsh -lc '\(agentType)'"
+        let remoteCommand = "export PATH=\"$HOME/.local/bin:$HOME/bin:/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && tmux new-session -d -s \(sessionName) -c '\(cwd)' -e WORKFORCE_SESSION=\(sessionName) -- zsh -lc '\(agentType)'"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: sshPath)
