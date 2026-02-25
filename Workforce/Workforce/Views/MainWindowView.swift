@@ -21,6 +21,7 @@ struct MainWindowView: View {
     @State private var showRecentEvents = false
     @State private var previousStatuses: [String: AgentStatus] = [:]
     @AppStorage("sidebarFolders") private var sidebarFoldersRaw = ""
+    @State private var showAddHostSheet = false
 
     /// Unique cwds from all active agents, sorted alphabetically
     private var activeCwds: [String] {
@@ -290,47 +291,20 @@ struct MainWindowView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Folders")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    addFolderToSidebar()
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Add folder to sidebar")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Local section
+                    localHostHeader
 
-            Divider()
-
-            let enabledRemoteHosts = remoteHostManager.hosts.filter(\.isEnabled)
-            let hasRemoteHosts = !enabledRemoteHosts.isEmpty
-
-            if sidebarCwds.isEmpty && !hasRemoteHosts {
-                VStack(spacing: 10) {
-                    Spacer()
-                    Text("No folders")
-                        .foregroundStyle(.secondary)
-                    Button("Add Folder") {
-                        addFolderToSidebar()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Spacer()
-                }
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        // Local section
-                        localHostHeader
-
-                        if !collapsedHosts.contains("local") {
+                    if !collapsedHosts.contains("local") {
+                        if sidebarCwds.isEmpty {
+                            Text("No local folders")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                        } else {
                             ForEach(Array(sidebarCwds.enumerated()), id: \.element) { index, cwd in
                                 if index > 0 {
                                     Spacer().frame(height: 12)
@@ -354,70 +328,83 @@ struct MainWindowView: View {
                                     }
                                 }
                             }
-
-                            if sidebarCwds.isEmpty {
-                                Text("No local folders")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                            }
                         }
+                    }
 
-                        // Remote host sections
-                        ForEach(enabledRemoteHosts) { host in
-                            Spacer().frame(height: 12)
-                            remoteHostHeader(host)
+                    // Remote section
+                    Spacer().frame(height: 4)
+                    Divider()
+                    remotesSectionHeader
 
-                            if !collapsedHosts.contains(host.id.uuidString) {
-                                remoteHostContent(host)
+                    if !collapsedHosts.contains("remotes") {
+                        let enabledRemoteHosts = remoteHostManager.hosts.filter(\.isEnabled)
+                        if enabledRemoteHosts.isEmpty {
+                            Text("No remote hosts")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                        } else {
+                            ForEach(enabledRemoteHosts) { host in
+                                remoteHostHeader(host)
+
+                                if !collapsedHosts.contains(host.id.uuidString) {
+                                    remoteHostContent(host)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        .sheet(isPresented: $showAddHostSheet) {
+            RemoteHostEditSheet(manager: remoteHostManager, host: nil)
+        }
     }
 
     // MARK: - Local Host Header
 
     private var localHostHeader: some View {
-        HStack(spacing: 6) {
-            Image(systemName: collapsedHosts.contains("local") ? "chevron.right" : "chevron.down")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .frame(width: 10)
-                .contentShape(Rectangle().inset(by: -4))
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        if collapsedHosts.contains("local") {
-                            collapsedHosts.remove("local")
-                        } else {
-                            collapsedHosts.insert("local")
-                        }
-                    }
-                }
-
-            Image(systemName: "desktopcomputer")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
+        HStack {
             Text("Local")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
-
             Spacer()
-
-            Text("\(store.agents.count)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .monospacedDigit()
+            Button {
+                addFolderToSidebar()
+            } label: {
+                Image(systemName: "folder.badge.plus")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Add folder to sidebar")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Remotes Section Header
+
+    private var remotesSectionHeader: some View {
+        HStack {
+            Text("Remote")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                showAddHostSheet = true
+            } label: {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Connect to remote host")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Local Agent Row
