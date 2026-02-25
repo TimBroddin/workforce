@@ -278,6 +278,14 @@ final class HTTPServer {
         }
     }
 
+    private static let allowedAgentTypes: Set<String> = [
+        "claude",
+        "claude --dangerously-skip-permissions",
+        "codex",
+        "opencode",
+        "bash",
+    ]
+
     private func handleSpawnAgent(body: Data, on connection: NWConnection) {
         struct SpawnRequest: Decodable {
             let cwd: String?
@@ -288,6 +296,11 @@ final class HTTPServer {
         let request = try? decoder.decode(SpawnRequest.self, from: body)
         let cwd = request?.cwd ?? "~"
         let agentType = request?.agentType ?? "claude"
+
+        guard Self.allowedAgentTypes.contains(agentType) else {
+            sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"agent type not allowed"}"#)
+            return
+        }
 
         if let sessionId = store.spawnAgent(cwd: cwd, agentType: agentType) {
             sendResponse(on: connection, status: "200 OK", body: #"{"ok":true,"sessionId":"\#(sessionId)"}"#)
