@@ -81,6 +81,11 @@ struct GeneralSettingsView: View {
                 Text("When enabled, the API is accessible from other devices on your network. Requires app restart.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if listenOnAllInterfaces {
+                    Label("You probably don't need this. Remote hosts are accessed via SSH tunnels which work with localhost. Only enable this if you have a specific reason to expose the API on your network.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
             }
 
             Section("Workforce CLI & Hooks") {

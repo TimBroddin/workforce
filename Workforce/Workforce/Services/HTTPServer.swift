@@ -175,6 +175,9 @@ final class HTTPServer {
             handleGetClients(on: connection)
         case ("POST", "/api/spawn"):
             handleSpawnAgent(body: body, on: connection)
+        case ("DELETE", let p) where p.hasPrefix("/api/agents/"):
+            let id = String(p.dropFirst("/api/agents/".count))
+            handleDeleteAgent(id: id, on: connection)
         case ("OPTIONS", _):
             sendResponse(on: connection, status: "204 No Content", body: "")
         default:
@@ -232,6 +235,15 @@ final class HTTPServer {
         } catch {
             sendResponse(on: connection, status: "500 Internal Server Error", body: #"{"error":"encoding failed"}"#)
         }
+    }
+
+    private func handleDeleteAgent(id: String, on connection: NWConnection) {
+        guard !id.isEmpty, store.agents[id] != nil else {
+            sendResponse(on: connection, status: "404 Not Found", body: #"{"error":"agent not found"}"#)
+            return
+        }
+        store.killAgent(id)
+        sendResponse(on: connection, status: "200 OK", body: #"{"ok":true}"#)
     }
 
     private func handlePostEvent(body: Data, on connection: NWConnection) {
