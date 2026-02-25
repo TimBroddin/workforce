@@ -20,6 +20,7 @@ public struct Agent: Codable, Identifiable, Sendable {
     public let agentType: String
     public let model: String?
     public let tmuxSession: String?
+    public let host: String?
 
     public let startedAt: Date
     public var lastActivityAt: Date
@@ -61,6 +62,7 @@ public struct Agent: Codable, Identifiable, Sendable {
         agentType: String = "claude",
         model: String? = nil,
         tmuxSession: String? = nil,
+        host: String? = nil,
         startedAt: Date = Date(),
         lastActivityAt: Date = Date(),
         status: AgentStatus = .active,
@@ -82,6 +84,7 @@ public struct Agent: Codable, Identifiable, Sendable {
         self.agentType = agentType
         self.model = model
         self.tmuxSession = tmuxSession
+        self.host = host
         self.startedAt = startedAt
         self.lastActivityAt = lastActivityAt
         self.status = status
