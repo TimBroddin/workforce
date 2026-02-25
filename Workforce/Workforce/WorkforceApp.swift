@@ -37,8 +37,7 @@ struct WorkforceApp: App {
         }
 
         Settings {
-            // TODO: pass remoteHostManager to SettingsView
-            SettingsView()
+            SettingsView(remoteHostManager: remoteHostManager!)
         }
     }
 

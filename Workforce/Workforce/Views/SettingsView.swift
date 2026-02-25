@@ -1,11 +1,18 @@
 import SwiftUI
 
 struct SettingsView: View {
+    let remoteHostManager: RemoteHostManager
+
     var body: some View {
         TabView {
             GeneralSettingsView()
                 .tabItem {
                     Label("General", systemImage: "gearshape")
+                }
+
+            RemoteHostsSettingsView(manager: remoteHostManager)
+                .tabItem {
+                    Label("Remote Hosts", systemImage: "network")
                 }
 
             BeadsSettingsView()
@@ -197,6 +204,163 @@ struct GeneralSettingsView: View {
             message = "Removed OpenCode hooks."
         } catch {
             message = "Uninstall failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Remote Hosts Settings
+
+struct RemoteHostsSettingsView: View {
+    let manager: RemoteHostManager
+    @State private var showAddSheet = false
+    @State private var editingHost: RemoteHost?
+
+    var body: some View {
+        Form {
+            Section {
+                if manager.hosts.isEmpty {
+                    Text("No remote hosts configured.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(manager.hosts) { host in
+                        remoteHostRow(host)
+                    }
+                }
+
+                Button("Add Host...") {
+                    showAddSheet = true
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .sheet(isPresented: $showAddSheet) {
+            RemoteHostEditSheet(manager: manager, host: nil)
+        }
+        .sheet(item: $editingHost) { host in
+            RemoteHostEditSheet(manager: manager, host: host)
+        }
+    }
+
+    private func remoteHostRow(_ host: RemoteHost) -> some View {
+        HStack {
+            connectionDot(for: host)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(host.label)
+                    .font(.body.weight(.medium))
+                Text(host.sshDestination)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let conn = manager.connections[host.id],
+                   case .error(let msg) = conn.status {
+                    Text(msg)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            if let conn = manager.connections[host.id], case .error = conn.status {
+                Button("Retry") {
+                    manager.retryConnection(host.id)
+                }
+                .controlSize(.small)
+            }
+            Button("Edit") {
+                editingHost = host
+            }
+            .controlSize(.small)
+            Button(role: .destructive) {
+                manager.removeHost(host.id)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func connectionDot(for host: RemoteHost) -> some View {
+        let color: Color = {
+            guard let conn = manager.connections[host.id] else {
+                return host.isEnabled ? .gray : .gray.opacity(0.3)
+            }
+            switch conn.status {
+            case .connected: return .green
+            case .connecting: return .yellow
+            case .error: return .red
+            case .disabled: return .gray.opacity(0.3)
+            }
+        }()
+        return Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+    }
+}
+
+struct RemoteHostEditSheet: View {
+    let manager: RemoteHostManager
+    let host: RemoteHost?
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var label = ""
+    @State private var sshDestination = ""
+    @State private var sshPort = "22"
+    @State private var sshKeyPath = ""
+    @State private var isEnabled = true
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(host == nil ? "Add Remote Host" : "Edit Remote Host")
+                .font(.headline)
+
+            Form {
+                TextField("Label", text: $label, prompt: Text("Home Mac"))
+                TextField("SSH Destination", text: $sshDestination, prompt: Text("user@hostname"))
+                TextField("Port", text: $sshPort)
+                TextField("SSH Key Path (optional)", text: $sshKeyPath, prompt: Text("~/.ssh/id_ed25519"))
+                Toggle("Enabled", isOn: $isEnabled)
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(host == nil ? "Add" : "Save") {
+                    save()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(label.isEmpty || sshDestination.isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 400)
+        .onAppear {
+            if let host {
+                label = host.label
+                sshDestination = host.sshDestination
+                sshPort = "\(host.sshPort)"
+                sshKeyPath = host.sshKeyPath ?? ""
+                isEnabled = host.isEnabled
+            }
+        }
+    }
+
+    private func save() {
+        let port = Int(sshPort) ?? 22
+        let keyPath = sshKeyPath.isEmpty ? nil : sshKeyPath
+        let updated = RemoteHost(
+            id: host?.id ?? UUID(),
+            label: label,
+            sshDestination: sshDestination,
+            sshPort: port,
+            sshKeyPath: keyPath,
+            isEnabled: isEnabled
+        )
+        if host != nil {
+            manager.updateHost(updated)
+        } else {
+            manager.addHost(updated)
         }
     }
 }
