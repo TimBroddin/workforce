@@ -343,7 +343,10 @@ final class RemoteHostManager {
         let timestamp = Int(Date().timeIntervalSince1970)
         let sessionName = "workforce-\(timestamp)"
 
-        let remoteCommand = "export PATH=\"$HOME/.local/bin:$HOME/bin:/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && tmux new-session -d -s \(sessionName) -c '\(cwd)' -e WORKFORCE_SESSION=\(sessionName) -- zsh -lc '\(agentType)'"
+        // Wrap in a login shell so PATH includes Homebrew/Linuxbrew paths where tmux lives.
+        // SSH concatenates all trailing args into one command string on the remote.
+        let tmuxCmd = "tmux new-session -d -s \(sessionName) -c '\(cwd)' -e WORKFORCE_SESSION=\(sessionName) -- zsh -lc '\(agentType)'"
+        let remoteCommand = "bash -lc \"\(tmuxCmd.replacingOccurrences(of: "\"", with: "\\\""))\""
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: sshPath)
