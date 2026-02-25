@@ -290,12 +290,8 @@ final class HTTPServer {
         }
     }
 
-    private static let allowedAgentTypes: Set<String> = [
-        "claude",
-        "claude --dangerously-skip-permissions",
-        "codex",
-        "opencode",
-        "bash",
+    private static let allowedAgentCommands: Set<String> = [
+        "claude", "codex", "opencode", "bash",
     ]
 
     private func handleSpawnAgent(body: Data, on connection: NWConnection) {
@@ -309,7 +305,9 @@ final class HTTPServer {
         let cwd = request?.cwd ?? "~"
         let agentType = request?.agentType ?? "claude"
 
-        guard Self.allowedAgentTypes.contains(agentType) else {
+        // Validate that the base command (first word) is in the allowlist
+        let baseCommand = agentType.split(separator: " ").first.map(String.init) ?? agentType
+        guard Self.allowedAgentCommands.contains(baseCommand) else {
             sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"agent type not allowed"}"#)
             return
         }

@@ -22,55 +22,71 @@ struct RunCommand: ParsableCommand {
             )
         }
 
-        // Resolve agent binary path
-        guard let agentPath = resolveBinary(agent) else {
-            throw ValidationError(
-                "\(agent) not found. Make sure it is installed and in your PATH."
+        let cwd = FileManager.default.currentDirectoryPath
+
+        // Build the full agent command string (agent + args)
+        let fullAgentType = ([agent] + agentArgs).joined(separator: " ")
+
+        // Try spawning via the Workforce HTTP API first.
+        // This creates the tmux session, registers the agent, and returns the session name.
+        let sessionName: String
+        if let apiSession = APIClient.spawn(cwd: cwd, agentType: fullAgentType) {
+            sessionName = apiSession
+        } else {
+            // Fall back to direct tmux spawn when the app isn't running.
+            guard let agentPath = resolveBinary(agent) else {
+                throw ValidationError(
+                    "\(agent) not found. Make sure it is installed and in your PATH."
+                )
+            }
+
+            let hexBytes = (0..<3).map { _ in UInt8.random(in: 0...255) }
+            let hex = hexBytes.map { String(format: "%02x", $0) }.joined()
+            sessionName = "workforce-\(hex)"
+
+            // Register agent with the Workforce app (best-effort)
+            let message = SocketMessage(
+                type: .register,
+                sessionId: sessionName,
+                cwd: cwd,
+                name: NameGenerator.generate(from: sessionName),
+                avatarSeed: sessionName,
+                status: .idle,
+                agentType: agent,
+                tmuxSession: sessionName
             )
+            APIClient.post(message)
+
+            let spawn = Process()
+            spawn.executableURL = URL(fileURLWithPath: tmuxPath)
+            spawn.arguments = [
+                "new-session", "-d",
+                "-s", sessionName,
+                "-c", cwd,
+                "-e", "WORKFORCE_SESSION=\(sessionName)",
+                agentPath,
+            ] + agentArgs
+            try spawn.run()
+            spawn.waitUntilExit()
+            guard spawn.terminationStatus == 0 else {
+                throw ExitCode(spawn.terminationStatus)
+            }
         }
 
-        // Generate session name
-        let hexBytes = (0..<3).map { _ in UInt8.random(in: 0...255) }
-        let hex = hexBytes.map { String(format: "%02x", $0) }.joined()
-        let sessionName = "workforce-\(hex)"
-
-        // Register agent with the Workforce app
-        let cwd = FileManager.default.currentDirectoryPath
-        let message = SocketMessage(
-            type: .register,
-            sessionId: sessionName,
-            cwd: cwd,
-            name: NameGenerator.generate(from: sessionName),
-            avatarSeed: sessionName,
-            status: .idle,
-            agentType: agent,
-            tmuxSession: sessionName
-        )
-        APIClient.post(message)
-
-        // Launch tmux directly with argv components to avoid shell escaping issues.
-        // Set WORKFORCE_SESSION so hooks running inside this tmux session
-        // can map Claude's session_id back to the workforce agent.
+        // Attach to the tmux session interactively
         let tmux = Process()
         tmux.executableURL = URL(fileURLWithPath: tmuxPath)
-        tmux.arguments = [
-            "new-session",
-            "-s", sessionName,
-            "-e", "WORKFORCE_SESSION=\(sessionName)",
-            agentPath,
-        ] + agentArgs
+        tmux.arguments = ["attach-session", "-t", sessionName]
         tmux.standardInput = FileHandle.standardInput
         tmux.standardOutput = FileHandle.standardOutput
         tmux.standardError = FileHandle.standardError
 
-        // Forward signals
         signal(SIGINT, SIG_IGN)
         signal(SIGTERM, SIG_IGN)
 
         try tmux.run()
         tmux.waitUntilExit()
 
-        // Exit with tmux's exit code
         throw ExitCode(tmux.terminationStatus)
     }
 
