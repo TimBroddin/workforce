@@ -751,8 +751,8 @@ struct MainWindowView: View {
             case .success:
                 // Agent will appear on next poll
                 remoteHostManager.pollAgents(hostId: host.id)
-            case .failure:
-                break
+            case .failure(let error):
+                print("[workforce] Failed to spawn remote agent: \(error.localizedDescription)")
             }
         }
     }

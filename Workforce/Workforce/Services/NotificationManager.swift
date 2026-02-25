@@ -25,11 +25,11 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         let sessionId = agent.sessionId
 
         // Wait for summary, then send a single notification
-        if let transcriptPath = agent.transcriptPath {
+        let backend = SummarizationBackend(
+            rawValue: UserDefaults.standard.string(forKey: "summarizationBackend") ?? SummarizationBackend.systemDefault.rawValue
+        ) ?? .systemDefault
+        if backend != .disabled, let transcriptPath = agent.transcriptPath {
             let messages = TranscriptReader.lastAssistantMessages(from: transcriptPath, count: 10)
-            let backend = SummarizationBackend(
-                rawValue: UserDefaults.standard.string(forKey: "summarizationBackend") ?? SummarizationBackend.systemDefault.rawValue
-            ) ?? .systemDefault
             Task {
                 let summary = await TranscriptSummarizer.shared.summarize(transcriptPath: transcriptPath, messages: messages, backend: backend)
                 await MainActor.run {

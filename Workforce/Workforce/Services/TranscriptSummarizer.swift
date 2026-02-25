@@ -4,6 +4,7 @@ import FoundationModels
 #endif
 
 enum SummarizationBackend: String, CaseIterable, Identifiable {
+    case disabled = "Disabled"
     case appleIntelligence = "Apple Intelligence"
     case openRouter = "OpenRouter"
     var id: String { rawValue }
@@ -15,7 +16,7 @@ enum SummarizationBackend: String, CaseIterable, Identifiable {
             return allCases
         }
         #endif
-        return [.openRouter]
+        return [.disabled, .openRouter]
     }
 
     /// Whether Apple Intelligence is ready to use on this system.
@@ -59,6 +60,8 @@ actor TranscriptSummarizer {
             return try await withThrowingTaskGroup(of: String?.self) { group in
                 group.addTask {
                     switch backend {
+                    case .disabled:
+                        return nil
                     case .appleIntelligence:
                         return try await self.summarizeWithAppleIntelligence(truncated)
                     case .openRouter:
