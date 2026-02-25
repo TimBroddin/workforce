@@ -4,9 +4,11 @@ import SwiftUI
 struct MainWindowView: View {
     let store: AgentStore
     let eventLog: EventLog
+    let remoteHostManager: RemoteHostManager
     @State private var selectedAgentId: String?
     @State private var selectedFolderCwd: String?
     @State private var collapsedCwds: Set<String> = []
+    @State private var collapsedHosts: Set<String> = []
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
     @State private var agentToDelete: Agent?
@@ -46,8 +48,15 @@ struct MainWindowView: View {
 
     /// The effectively selected agent, falling back to the first sorted agent.
     private var selectedAgent: Agent? {
-        if let selectedAgentId, let agent = store.agents[selectedAgentId] {
-            return agent
+        if let selectedAgentId {
+            if let agent = store.agents[selectedAgentId] {
+                return agent
+            }
+            for conn in remoteHostManager.connections.values {
+                if let agent = conn.agents.first(where: { $0.sessionId == selectedAgentId }) {
+                    return agent
+                }
+            }
         }
         return store.sortedAgents.first
     }
@@ -176,6 +185,14 @@ struct MainWindowView: View {
                 hasOpenCode = opencode
             }
         }
+        .task {
+            while !Task.isCancelled {
+                for host in remoteHostManager.hosts where host.isEnabled {
+                    remoteHostManager.pollAgents(hostId: host.id)
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
         .sheet(isPresented: $showSetupWizard) {
             SetupWizardView(isPresented: $showSetupWizard)
         }
@@ -293,7 +310,10 @@ struct MainWindowView: View {
 
             Divider()
 
-            if sidebarCwds.isEmpty {
+            let enabledRemoteHosts = remoteHostManager.hosts.filter(\.isEnabled)
+            let hasRemoteHosts = !enabledRemoteHosts.isEmpty
+
+            if sidebarCwds.isEmpty && !hasRemoteHosts {
                 VStack(spacing: 10) {
                     Spacer()
                     Text("No folders")
@@ -307,66 +327,354 @@ struct MainWindowView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(sidebarCwds.enumerated()), id: \.element) { index, cwd in
-                            if index > 0 {
-                                Spacer().frame(height: 12)
-                            }
+                        // Local section
+                        localHostHeader
 
-                            sectionHeader(for: cwd)
+                        if !collapsedHosts.contains("local") {
+                            ForEach(Array(sidebarCwds.enumerated()), id: \.element) { index, cwd in
+                                if index > 0 {
+                                    Spacer().frame(height: 12)
+                                }
 
-                            if !collapsedCwds.contains(cwd) {
-                                let cwdAgents = agents(for: cwd)
-                                if cwdAgents.isEmpty {
-                                    Text("No running agents")
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                } else {
-                                    ForEach(cwdAgents) { agent in
-                                        AgentRowView(agent: agent)
-                                            .background(
-                                                isSelected(agent)
-                                                    ? Color.accentColor.opacity(0.1)
-                                                    : Color.clear
-                                            )
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                selectedAgentId = agent.sessionId
-                                                selectedFolderCwd = nil
-                                            }
-                                            .contextMenu {
-                                                if let tmux = agent.tmuxSession {
-                                                    Button("Open in Terminal") {
-                                                        let terminal = SupportedTerminal(rawValue: defaultTerminal) ?? .terminal
-                                                        AppLauncher.openInTerminal(tmuxSession: tmux, terminal: terminal)
-                                                    }
-                                                    Button("Copy tmux Command") {
-                                                        NSPasteboard.general.clearContents()
-                                                        NSPasteboard.general.setString(
-                                                            AppLauncher.tmuxAttachCommand(session: tmux),
-                                                            forType: .string
-                                                        )
-                                                    }
-                                                }
+                                sectionHeader(for: cwd)
 
-                                                Divider()
-
-                                                Button("Close") {
-                                                    store.removeAgent(agent.sessionId)
-                                                }
-
-                                                Button("Delete...", role: .destructive) {
-                                                    agentToDelete = agent
-                                                }
-                                            }
+                                if !collapsedCwds.contains(cwd) {
+                                    let cwdAgents = agents(for: cwd)
+                                    if cwdAgents.isEmpty {
+                                        Text("No running agents")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                    } else {
+                                        ForEach(cwdAgents) { agent in
+                                            localAgentRow(agent)
+                                        }
                                     }
                                 }
+                            }
+
+                            if sidebarCwds.isEmpty {
+                                Text("No local folders")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                            }
+                        }
+
+                        // Remote host sections
+                        ForEach(enabledRemoteHosts) { host in
+                            Spacer().frame(height: 12)
+                            remoteHostHeader(host)
+
+                            if !collapsedHosts.contains(host.id.uuidString) {
+                                remoteHostContent(host)
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: - Local Host Header
+
+    private var localHostHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: collapsedHosts.contains("local") ? "chevron.right" : "chevron.down")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(width: 10)
+                .contentShape(Rectangle().inset(by: -4))
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        if collapsedHosts.contains("local") {
+                            collapsedHosts.remove("local")
+                        } else {
+                            collapsedHosts.insert("local")
+                        }
+                    }
+                }
+
+            Image(systemName: "desktopcomputer")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Local")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Text("\(store.agents.count)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+    }
+
+    // MARK: - Local Agent Row
+
+    private func localAgentRow(_ agent: Agent) -> some View {
+        AgentRowView(agent: agent)
+            .background(
+                isSelected(agent)
+                    ? Color.accentColor.opacity(0.1)
+                    : Color.clear
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedAgentId = agent.sessionId
+                selectedFolderCwd = nil
+            }
+            .contextMenu {
+                if let tmux = agent.tmuxSession {
+                    Button("Open in Terminal") {
+                        let terminal = SupportedTerminal(rawValue: defaultTerminal) ?? .terminal
+                        AppLauncher.openInTerminal(tmuxSession: tmux, terminal: terminal)
+                    }
+                    Button("Copy tmux Command") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(
+                            AppLauncher.tmuxAttachCommand(session: tmux),
+                            forType: .string
+                        )
+                    }
+                }
+
+                Divider()
+
+                Button("Close") {
+                    store.removeAgent(agent.sessionId)
+                }
+
+                Button("Delete...", role: .destructive) {
+                    agentToDelete = agent
+                }
+            }
+    }
+
+    // MARK: - Remote Host Header & Content
+
+    private func remoteHostHeader(_ host: RemoteHost) -> some View {
+        let conn = remoteHostManager.connections[host.id]
+        let status = conn?.status ?? .disabled
+
+        return HStack(spacing: 6) {
+            Image(systemName: collapsedHosts.contains(host.id.uuidString) ? "chevron.right" : "chevron.down")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(width: 10)
+                .contentShape(Rectangle().inset(by: -4))
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        if collapsedHosts.contains(host.id.uuidString) {
+                            collapsedHosts.remove(host.id.uuidString)
+                        } else {
+                            collapsedHosts.insert(host.id.uuidString)
+                        }
+                    }
+                }
+
+            Circle()
+                .fill(connectionStatusColor(status))
+                .frame(width: 8, height: 8)
+
+            Text(host.label)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer()
+
+            if case .error = status {
+                Button {
+                    remoteHostManager.retryConnection(host.id)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Retry connection")
+            }
+
+            let remoteCount = remoteAgents(for: host.id).count
+            if remoteCount > 0 {
+                Text("\(remoteCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+
+            if status == .connected {
+                Menu {
+                    Button("Claude") {
+                        spawnRemoteAgent(host: host, agentType: "claude")
+                    }
+                    Button("Claude (--dangerously-skip-permissions)") {
+                        spawnRemoteAgent(host: host, agentType: "claude --dangerously-skip-permissions")
+                    }
+                    Divider()
+                    Button("Bash") {
+                        spawnRemoteAgent(host: host, agentType: "bash")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("New agent on \(host.label)")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+    }
+
+    @ViewBuilder
+    private func remoteHostContent(_ host: RemoteHost) -> some View {
+        let conn = remoteHostManager.connections[host.id]
+        let status = conn?.status ?? .disabled
+
+        switch status {
+        case .connected:
+            let cwds = remoteCwds(for: host.id)
+            if cwds.isEmpty {
+                Text("No running agents")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach(Array(cwds.enumerated()), id: \.element) { index, cwd in
+                    if index > 0 {
+                        Spacer().frame(height: 8)
+                    }
+
+                    // Simple folder label for remote cwds
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(abbreviatePath(cwd))
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+
+                    ForEach(remoteAgents(for: host.id, cwd: cwd)) { agent in
+                        remoteAgentRow(agent)
+                    }
+                }
+            }
+        case .connecting:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Connecting...")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        case .error(let message):
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        case .disabled:
+            Text("Disabled")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        }
+    }
+
+    private func remoteAgentRow(_ agent: Agent) -> some View {
+        AgentRowView(agent: agent)
+            .background(
+                isSelected(agent)
+                    ? Color.accentColor.opacity(0.1)
+                    : Color.clear
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedAgentId = agent.sessionId
+                selectedFolderCwd = nil
+            }
+            .contextMenu {
+                if let tmux = agent.tmuxSession, let host = agent.host {
+                    Button("Copy SSH Command") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(
+                            "ssh -t \(host) tmux -u attach -t \(tmux)",
+                            forType: .string
+                        )
+                    }
+                }
+
+                Divider()
+
+                Button("Close") {
+                    // Remove from local view only — remote agents are managed by remote host
+                    if let hostId = remoteHostManager.hosts.first(where: { $0.sshDestination == agent.host })?.id {
+                        remoteHostManager.connections[hostId]?.agents.removeAll { $0.sessionId == agent.sessionId }
+                    }
+                }
+            }
+    }
+
+    // MARK: - Remote Agent Helpers
+
+    private func remoteAgents(for hostId: UUID) -> [Agent] {
+        remoteHostManager.connections[hostId]?.agents ?? []
+    }
+
+    private func remoteCwds(for hostId: UUID) -> [String] {
+        Array(Set(remoteAgents(for: hostId).map(\.cwd))).sorted()
+    }
+
+    private func remoteAgents(for hostId: UUID, cwd: String) -> [Agent] {
+        remoteAgents(for: hostId).filter { $0.cwd == cwd }
+    }
+
+    private func connectionStatusColor(_ status: ConnectionStatus) -> Color {
+        switch status {
+        case .connected: return .green
+        case .connecting: return .yellow
+        case .error: return .red
+        case .disabled: return .gray
+        }
+    }
+
+    private func spawnRemoteAgent(host: RemoteHost, agentType: String) {
+        remoteHostManager.spawnAgent(host: host, cwd: "~", agentType: agentType) { result in
+            switch result {
+            case .success:
+                // Agent will appear on next poll
+                remoteHostManager.pollAgents(hostId: host.id)
+            case .failure:
+                break
             }
         }
     }
@@ -529,11 +837,15 @@ struct MainWindowView: View {
 
     private var footer: some View {
         HStack {
-            Text("\(store.agents.count) agent\(store.agents.count == 1 ? "" : "s")")
+            let localCount = store.agents.count
+            let remoteCount = remoteHostManager.allRemoteAgents.count
+            let total = localCount + remoteCount
+            Text("\(total) agent\(total == 1 ? "" : "s")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if showCosts {
-                let totalCost = store.sortedAgents.reduce(0.0) { total, agent in
+                let allAgents = store.sortedAgents + remoteHostManager.allRemoteAgents
+                let totalCost = allAgents.reduce(0.0) { total, agent in
                     total + CostCalculator.estimateCost(
                         model: agent.model,
                         inputTokens: agent.totalInputTokens,

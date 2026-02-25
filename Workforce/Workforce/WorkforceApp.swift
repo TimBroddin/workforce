@@ -15,8 +15,7 @@ struct WorkforceApp: App {
 
     var body: some Scene {
         Window("Workforce", id: "main") {
-            // TODO: pass remoteHostManager to views
-            MainWindowView(store: agentStore, eventLog: eventLog)
+            MainWindowView(store: agentStore, eventLog: eventLog, remoteHostManager: remoteHostManager!)
         }
         .commands {
             CommandGroup(after: .windowArrangement) {
