@@ -278,7 +278,46 @@ final class RemoteHostManager {
                 self.connections[hostId] = conn
             }
         }.resume()
+
+        registerWithRemote(hostId: hostId)
     }
+
+    // MARK: - Client registration
+
+    func registerWithRemote(hostId: UUID) {
+        guard let conn = connections[hostId], conn.status == .connected, conn.localPort > 0 else { return }
+        guard let url = URL(string: "http://localhost:\(conn.localPort)/api/clients/register") else { return }
+
+        let clientId = Self.stableClientId
+        let hostname = Host.current().localizedName ?? "unknown"
+        let user = NSUserName()
+
+        let body: [String: String] = [
+            "clientId": clientId,
+            "hostname": hostname,
+            "user": user
+        ]
+
+        guard let bodyData = try? JSONEncoder().encode(body) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = bodyData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 5
+
+        URLSession.shared.dataTask(with: request).resume()
+    }
+
+    private static let stableClientId: String = {
+        let key = "workforceClientId"
+        if let existing = UserDefaults.standard.string(forKey: key) {
+            return existing
+        }
+        let newId = UUID().uuidString
+        UserDefaults.standard.set(newId, forKey: key)
+        return newId
+    }()
 
     // MARK: - Retry with exponential backoff
 
