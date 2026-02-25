@@ -10,6 +10,7 @@ struct MainWindowView: View {
     @State private var selectedFolderCwd: String?
     @State private var collapsedCwds: Set<String> = []
     @State private var collapsedHosts: Set<String> = []
+    @State private var collapsedRemoteCwds: Set<String> = []
     @AppStorage("defaultTerminal") private var defaultTerminal: String = SupportedTerminal.terminal.rawValue
     @AppStorage("defaultIDE") private var defaultIDE: String = SupportedIDE.vscode.rawValue
     @State private var agentToDelete: Agent?
@@ -600,8 +601,24 @@ struct MainWindowView: View {
                         Spacer().frame(height: 8)
                     }
 
-                    // Simple folder label for remote cwds
+                    let collapseKey = "\(host.id):\(cwd)"
+
                     HStack(spacing: 6) {
+                        Image(systemName: collapsedRemoteCwds.contains(collapseKey) ? "chevron.right" : "chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 10)
+                            .contentShape(Rectangle().inset(by: -4))
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    if collapsedRemoteCwds.contains(collapseKey) {
+                                        collapsedRemoteCwds.remove(collapseKey)
+                                    } else {
+                                        collapsedRemoteCwds.insert(collapseKey)
+                                    }
+                                }
+                            }
+
                         Image(systemName: "folder.fill")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -611,13 +628,37 @@ struct MainWindowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+
                         Spacer()
+
+                        Menu {
+                            Button("Claude") {
+                                spawnRemoteAgent(host: host, cwd: cwd, agentType: "claude")
+                            }
+                            Button("Claude (--dangerously-skip-permissions)") {
+                                spawnRemoteAgent(host: host, cwd: cwd, agentType: "claude --dangerously-skip-permissions")
+                            }
+                            Divider()
+                            Button("Bash") {
+                                spawnRemoteAgent(host: host, cwd: cwd, agentType: "bash")
+                            }
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("New agent in \(abbreviatePath(cwd))")
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
 
-                    ForEach(remoteAgents(for: host.id, cwd: cwd)) { agent in
-                        remoteAgentRow(agent)
+                    if !collapsedRemoteCwds.contains(collapseKey) {
+                        ForEach(remoteAgents(for: host.id, cwd: cwd)) { agent in
+                            remoteAgentRow(agent)
+                        }
                     }
                 }
             }
@@ -704,8 +745,8 @@ struct MainWindowView: View {
         }
     }
 
-    private func spawnRemoteAgent(host: RemoteHost, agentType: String) {
-        remoteHostManager.spawnAgent(host: host, cwd: "~", agentType: agentType) { result in
+    private func spawnRemoteAgent(host: RemoteHost, cwd: String = "~", agentType: String) {
+        remoteHostManager.spawnAgent(host: host, cwd: cwd, agentType: agentType) { result in
             switch result {
             case .success:
                 // Agent will appear on next poll
