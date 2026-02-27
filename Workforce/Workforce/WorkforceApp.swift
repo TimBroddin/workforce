@@ -10,13 +10,13 @@ struct WorkforceApp: App {
     @State private var agentStore = AgentStore()
     @State private var eventLog = EventLog()
     @State private var httpServer: HTTPServer?
-    @State private var remoteHostManager: RemoteHostManager?
-    @State private var clientRegistry: ClientRegistry?
+    @State private var remoteHostManager: RemoteHostManager
+    @State private var clientRegistry: ClientRegistry
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window("Workforce", id: "main") {
-            MainWindowView(store: agentStore, eventLog: eventLog, remoteHostManager: remoteHostManager!, clientRegistry: clientRegistry!)
+            MainWindowView(store: agentStore, eventLog: eventLog, remoteHostManager: remoteHostManager, clientRegistry: clientRegistry)
         }
         .commands {
             CommandGroup(after: .windowArrangement) {
@@ -37,7 +37,7 @@ struct WorkforceApp: App {
         }
 
         Settings {
-            SettingsView(remoteHostManager: remoteHostManager!)
+            SettingsView(remoteHostManager: remoteHostManager)
         }
     }
 

@@ -25,6 +25,7 @@ struct MainWindowView: View {
     @AppStorage("sidebarFolders") private var sidebarFoldersRaw = ""
     @State private var showAddHostSheet = false
     @State private var sidebarTab = 0
+    @State private var spawnError: String?
 
     /// Unique cwds from all active agents, sorted alphabetically
     private var activeCwds: [String] {
@@ -132,6 +133,17 @@ struct MainWindowView: View {
                 Text("This will kill the tmux session for \"\(agent.displayTitle)\" and remove it from the list.")
             }
         }
+        .alert(
+            "Spawn Failed",
+            isPresented: Binding(
+                get: { spawnError != nil },
+                set: { if !$0 { spawnError = nil } }
+            )
+        ) {
+            Button("OK") { spawnError = nil }
+        } message: {
+            Text(spawnError ?? "")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .focusAgent)) { notification in
             if let sessionId = notification.userInfo?["sessionId"] as? String {
                 selectedAgentId = sessionId
@@ -194,7 +206,7 @@ struct MainWindowView: View {
                 for host in remoteHostManager.hosts where host.isEnabled {
                     remoteHostManager.pollAgents(hostId: host.id)
                 }
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: .seconds(30))
             }
         }
         .sheet(isPresented: $showSetupWizard) {
@@ -749,10 +761,9 @@ struct MainWindowView: View {
         remoteHostManager.spawnAgent(host: host, cwd: cwd, agentType: agentType) { result in
             switch result {
             case .success:
-                // Agent will appear on next poll
                 remoteHostManager.pollAgents(hostId: host.id)
             case .failure(let error):
-                print("[workforce] Failed to spawn remote agent: \(error.localizedDescription)")
+                spawnError = "Failed to spawn agent on \(host.label): \(error.localizedDescription)"
             }
         }
     }

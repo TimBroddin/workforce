@@ -5,7 +5,7 @@ import Observation
 final class ClientRegistry {
     private(set) var clients: [String: ConnectedClient] = [:]
     private var pruneTimer: Timer?
-    private let staleThreshold: TimeInterval = 30
+    private let staleThreshold: TimeInterval = 90
 
     var connectedClients: [ConnectedClient] {
         Array(clients.values).sorted { $0.hostname < $1.hostname }

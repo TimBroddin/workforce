@@ -4,6 +4,7 @@ import Observation
 @Observable
 final class AgentStore {
     var agents: [String: Agent] = [:]
+    var onStateChange: ((SocketMessage) -> Void)?
 
     private static let storePath: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -95,6 +96,7 @@ final class AgentStore {
             }
         }
         save()
+        onStateChange?(message)
     }
 
     /// Returns the existing agent for this session, or auto-registers one from the message.
@@ -145,24 +147,30 @@ final class AgentStore {
         )
         agents[sessionName] = agent
         save()
+        onStateChange?(SocketMessage(type: .register, sessionId: sessionName, cwd: cwd, agentType: agentType, tmuxSession: sessionName))
         return sessionName
     }
 
     func killAgent(_ sessionId: String) {
+        let cwd = agents[sessionId]?.cwd ?? ""
         guard let agent = agents[sessionId],
               let tmux = agent.tmuxSession else {
             agents.removeValue(forKey: sessionId)
             save()
+            onStateChange?(SocketMessage(type: .deregister, sessionId: sessionId, cwd: cwd))
             return
         }
         _ = runTmux(["kill-session", "-t", tmux])
         agents.removeValue(forKey: sessionId)
         save()
+        onStateChange?(SocketMessage(type: .deregister, sessionId: sessionId, cwd: cwd))
     }
 
     func removeAgent(_ sessionId: String) {
+        let cwd = agents[sessionId]?.cwd ?? ""
         agents.removeValue(forKey: sessionId)
         save()
+        onStateChange?(SocketMessage(type: .deregister, sessionId: sessionId, cwd: cwd))
     }
 
     func discoverTmuxSessions() {
@@ -187,13 +195,20 @@ final class AgentStore {
 
     func pruneStale() {
         let before = agents.count
+        var pruned: [(String, String)] = []
         for (id, agent) in agents {
             guard let tmux = agent.tmuxSession else { continue }
             if !tmuxSessionExists(tmux) {
+                pruned.append((id, agent.cwd))
                 agents.removeValue(forKey: id)
             }
         }
-        if agents.count != before { save() }
+        if agents.count != before {
+            save()
+            for (id, cwd) in pruned {
+                onStateChange?(SocketMessage(type: .deregister, sessionId: id, cwd: cwd))
+            }
+        }
     }
 
     func refreshPaneTitles() {

@@ -195,15 +195,35 @@ enum BeadsService {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // Read pipe data asynchronously to avoid deadlock when output exceeds
+        // the pipe buffer. The child would block on write while waitUntilExit
+        // waits for the child — classic deadlock.
+        var stdoutData = Data()
+        var stderrData = Data()
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            stdoutData.append(handle.availableData)
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            stderrData.append(handle.availableData)
+        }
+
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
             return CLIResult(exitCode: 1, stdout: "", stderr: error.localizedDescription)
         }
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        // Drain remaining data and clean up handlers
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        stdoutData.append(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+        stderrData.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
         return CLIResult(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
     }
 

@@ -219,6 +219,8 @@ struct RemoteHostsSettingsView: View {
     let manager: RemoteHostManager
     @State private var showAddSheet = false
     @State private var editingHost: RemoteHost?
+    @State private var showQRScanner = false
+    @State private var workforceKeys: [WorkforceSSHKey] = []
 
     var body: some View {
         Form {
@@ -236,6 +238,39 @@ struct RemoteHostsSettingsView: View {
                     showAddSheet = true
                 }
             }
+
+            Section("iOS Device Keys") {
+                ForEach(workforceKeys) { key in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(key.comment.isEmpty ? key.keyType : key.comment)
+                                .font(.body.weight(.medium))
+                            HStack(spacing: 4) {
+                                Text(key.keyType)
+                                Text(String(key.keyData.prefix(12)) + "..." + String(key.keyData.suffix(8)))
+                            }
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            if let date = key.addedDate {
+                                Text("Added \(formatDate(date))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            removeKey(key)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                Button("Scan Key from iOS Device...") {
+                    showQRScanner = true
+                }
+            }
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showAddSheet) {
@@ -244,6 +279,31 @@ struct RemoteHostsSettingsView: View {
         .sheet(item: $editingHost) { host in
             RemoteHostEditSheet(manager: manager, host: host)
         }
+        .sheet(isPresented: $showQRScanner) {
+            QRKeyScannerView()
+        }
+        .onAppear { refreshKeys() }
+        .onChange(of: showQRScanner) {
+            if !showQRScanner { refreshKeys() }
+        }
+    }
+
+    private func refreshKeys() {
+        workforceKeys = SSHKeyInstaller.workforceKeys()
+    }
+
+    private func removeKey(_ key: WorkforceSSHKey) {
+        try? SSHKeyInstaller.removeKey(key)
+        refreshKeys()
+    }
+
+    private func formatDate(_ iso: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: iso) else { return iso }
+        let display = DateFormatter()
+        display.dateStyle = .medium
+        display.timeStyle = .short
+        return display.string(from: date)
     }
 
     private func remoteHostRow(_ host: RemoteHost) -> some View {

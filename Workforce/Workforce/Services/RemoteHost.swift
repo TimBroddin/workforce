@@ -47,7 +47,7 @@ struct RemoteHost: Codable, Identifiable {
             args += ["-p", "\(sshPort)"]
         }
         if let key = sshKeyPath {
-            args += ["-i", key]
+            args += ["-i", (key as NSString).expandingTildeInPath]
         }
         args.append(sshDestination)
         return args

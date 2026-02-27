@@ -20,7 +20,7 @@ public struct Agent: Codable, Identifiable, Sendable {
     public let agentType: String
     public let model: String?
     public let tmuxSession: String?
-    public let host: String?
+    public var host: String?
 
     public let startedAt: Date
     public var lastActivityAt: Date

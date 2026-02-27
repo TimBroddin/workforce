@@ -3,6 +3,17 @@ import WorkforceKit
 
 enum APIClient {
     private static let portFilePath = "/tmp/workforce-\(getuid()).port"
+    private static let tokenFilePath = "/tmp/workforce-\(getuid()).token"
+
+    private static func readToken() -> String? {
+        try? String(contentsOfFile: tokenFilePath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func addAuth(to request: inout URLRequest) {
+        if let token = readToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+    }
 
     static func fetchAgents() -> [Agent]? {
         guard let port = readPort() else { return nil }
@@ -10,8 +21,11 @@ enum APIClient {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 2
+        addAuth(to: &request)
 
         let semaphore = DispatchSemaphore(value: 0)
+        // Safety: semaphore.wait() provides a happens-before guarantee between
+        // the callback writing `result` and the read after wait() returns.
         nonisolated(unsafe) var result: [Agent]?
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -36,6 +50,7 @@ enum APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 2
+        addAuth(to: &request)
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -59,12 +74,15 @@ enum APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 5
+        addAuth(to: &request)
 
         let body: [String: String] = ["cwd": cwd, "agentType": agentType]
         guard let bodyData = try? JSONEncoder().encode(body) else { return nil }
         request.httpBody = bodyData
 
         let semaphore = DispatchSemaphore(value: 0)
+        // Safety: semaphore.wait() provides a happens-before guarantee between
+        // the callback writing `result` and the read after wait() returns.
         nonisolated(unsafe) var result: String?
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in

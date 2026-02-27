@@ -10,9 +10,21 @@ final class RemoteHostManager {
         var status: ConnectionStatus = .disabled
         var sshProcess: Process?
         var localPort: UInt16 = 0
+        var apiToken: String?
         var agents: [Agent] = []
         var lastError: String?
         var retryCount: Int = 0
+        var webSocketTask: URLSessionWebSocketTask?
+        var useWebSocket: Bool = false
+    }
+
+    /// Build a URLRequest with the remote host's API token attached.
+    private func authenticatedRequest(url: URL, hostId: UUID) -> URLRequest {
+        var request = URLRequest(url: url)
+        if let token = connections[hostId]?.apiToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
     }
 
     var allRemoteAgents: [Agent] {
@@ -98,8 +110,8 @@ final class RemoteHostManager {
         discoverRemotePort(host: host) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let remotePort):
-                self.openTunnel(host: host, remotePort: remotePort)
+            case .success(let discovery):
+                self.openTunnel(host: host, remotePort: discovery.port, apiToken: discovery.token)
             case .failure(let error):
                 var conn = self.connections[host.id] ?? RemoteConnection()
                 conn.status = .error(error.localizedDescription)
@@ -112,6 +124,9 @@ final class RemoteHostManager {
 
     func disconnect(_ hostId: UUID) {
         guard var conn = connections[hostId] else { return }
+        conn.webSocketTask?.cancel(with: .goingAway, reason: nil)
+        conn.webSocketTask = nil
+        conn.useWebSocket = false
         if let process = conn.sshProcess, process.isRunning {
             process.terminate()
         }
@@ -132,10 +147,18 @@ final class RemoteHostManager {
 
     // MARK: - SSH operations
 
-    private func discoverRemotePort(host: RemoteHost, completion: @escaping (Result<UInt16, Error>) -> Void) {
+    struct RemoteDiscovery {
+        let port: UInt16
+        let token: String?
+    }
+
+    private func discoverRemotePort(host: RemoteHost, completion: @escaping (Result<RemoteDiscovery, Error>) -> Void) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: sshPath)
-        process.arguments = host.sshBaseArgs + ["cat /tmp/workforce-*.port 2>/dev/null || echo NOPORT"]
+        // Read both the port and token files from the remote host
+        process.arguments = host.sshBaseArgs + [
+            "echo PORT=$(cat /tmp/workforce-*.port 2>/dev/null || echo NOPORT); echo TOKEN=$(cat /tmp/workforce-*.token 2>/dev/null)"
+        ]
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -157,20 +180,40 @@ final class RemoteHostManager {
                 if process.terminationStatus != 0 {
                     completion(.failure(NSError(domain: "SSH", code: Int(process.terminationStatus),
                         userInfo: [NSLocalizedDescriptionKey: "SSH connection failed (exit \(process.terminationStatus))"])))
-                } else if output == "NOPORT" || output.isEmpty {
+                    return
+                }
+
+                // Parse PORT=<value> and TOKEN=<value> from output
+                var portStr: String?
+                var tokenStr: String?
+                for line in output.split(separator: "\n") {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.hasPrefix("PORT=") {
+                        portStr = String(trimmed.dropFirst("PORT=".count))
+                    } else if trimmed.hasPrefix("TOKEN=") {
+                        let val = String(trimmed.dropFirst("TOKEN=".count))
+                        if !val.isEmpty { tokenStr = val }
+                    }
+                }
+
+                guard let portValue = portStr, portValue != "NOPORT", !portValue.isEmpty else {
                     completion(.failure(NSError(domain: "SSH", code: 1,
                         userInfo: [NSLocalizedDescriptionKey: "Workforce not running on remote (no port file)"])))
-                } else if let port = UInt16(output) {
-                    completion(.success(port))
-                } else {
-                    completion(.failure(NSError(domain: "SSH", code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Invalid port file contents: \(output)"])))
+                    return
                 }
+
+                guard let port = UInt16(portValue) else {
+                    completion(.failure(NSError(domain: "SSH", code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Invalid port file contents: \(portValue)"])))
+                    return
+                }
+
+                completion(.success(RemoteDiscovery(port: port, token: tokenStr)))
             }
         }
     }
 
-    private func openTunnel(host: RemoteHost, remotePort: UInt16) {
+    private func openTunnel(host: RemoteHost, remotePort: UInt16, apiToken: String?) {
         let localPort = findFreePort()
         guard localPort > 0 else {
             var conn = connections[host.id] ?? RemoteConnection()
@@ -211,6 +254,7 @@ final class RemoteHostManager {
             var conn = connections[host.id] ?? RemoteConnection()
             conn.sshProcess = process
             conn.localPort = localPort
+            conn.apiToken = apiToken
             conn.status = .connected
             conn.retryCount = 0
             connections[host.id] = conn
@@ -230,10 +274,16 @@ final class RemoteHostManager {
 
     func pollAgents(hostId: UUID) {
         guard let conn = connections[hostId], conn.status == .connected, conn.localPort > 0 else { return }
+
+        // Skip polling when WebSocket is active and connected
+        if conn.useWebSocket, let task = conn.webSocketTask, task.state == .running {
+            return
+        }
+
         guard let host = hosts.first(where: { $0.id == hostId }) else { return }
         guard let url = URL(string: "http://localhost:\(conn.localPort)/api/agents") else { return }
 
-        var request = URLRequest(url: url)
+        var request = authenticatedRequest(url: url, hostId: hostId)
         request.timeoutInterval = 5
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
@@ -246,40 +296,140 @@ final class RemoteHostManager {
                     let decoder = JSONDecoder()
                     decoder.dateDecodingStrategy = .iso8601
                     if var agents = try? decoder.decode([Agent].self, from: data) {
-                        agents = agents.map { agent in
-                            Agent(
-                                sessionId: agent.sessionId,
-                                name: agent.name,
-                                avatarSeed: agent.avatarSeed,
-                                cwd: agent.cwd,
-                                agentType: agent.agentType,
-                                model: agent.model,
-                                tmuxSession: agent.tmuxSession,
-                                host: host.sshDestination,
-                                startedAt: agent.startedAt,
-                                lastActivityAt: agent.lastActivityAt,
-                                status: agent.status,
-                                currentToolName: agent.currentToolName,
-                                lastNotificationType: agent.lastNotificationType,
-                                subagentCount: agent.subagentCount,
-                                paneTitle: agent.paneTitle,
-                                transcriptPath: agent.transcriptPath,
-                                notificationMessage: agent.notificationMessage,
-                                totalInputTokens: agent.totalInputTokens,
-                                totalOutputTokens: agent.totalOutputTokens,
-                                totalCacheCreationTokens: agent.totalCacheCreationTokens,
-                                totalCacheReadTokens: agent.totalCacheReadTokens
-                            )
-                        }
+                        agents = agents.map { var a = $0; a.host = host.sshDestination; return a }
                         conn.agents = agents
                         conn.status = .connected
                     }
+                    self.connections[hostId] = conn
+
+                    // After first successful poll, try to upgrade to WebSocket
+                    if !conn.useWebSocket {
+                        self.connectWebSocket(hostId: hostId)
+                    }
+                } else {
+                    self.connections[hostId] = conn
                 }
-                self.connections[hostId] = conn
             }
         }.resume()
 
         registerWithRemote(hostId: hostId)
+    }
+
+    // MARK: - WebSocket
+
+    private func connectWebSocket(hostId: UUID) {
+        guard let conn = connections[hostId], conn.status == .connected, conn.localPort > 0 else { return }
+        guard let token = conn.apiToken else { return }
+        guard let host = hosts.first(where: { $0.id == hostId }) else { return }
+        guard let url = URL(string: "ws://localhost:\(conn.localPort)/api/ws?token=\(token)") else { return }
+
+        let task = URLSession.shared.webSocketTask(with: url)
+        task.resume()
+
+        var updated = conn
+        updated.webSocketTask = task
+        updated.useWebSocket = true
+        connections[hostId] = updated
+
+        receiveWebSocketMessage(hostId: hostId, host: host)
+    }
+
+    private func receiveWebSocketMessage(hostId: UUID, host: RemoteHost) {
+        guard let task = connections[hostId]?.webSocketTask else { return }
+
+        task.receive { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success(let message):
+                    switch message {
+                    case .string(let text):
+                        self.handleWebSocketText(text, hostId: hostId, host: host)
+                    case .data(let data):
+                        if let text = String(data: data, encoding: .utf8) {
+                            self.handleWebSocketText(text, hostId: hostId, host: host)
+                        }
+                    @unknown default:
+                        break
+                    }
+                    self.receiveWebSocketMessage(hostId: hostId, host: host)
+
+                case .failure:
+                    // WS failed — fall back to polling
+                    if var conn = self.connections[hostId] {
+                        conn.webSocketTask = nil
+                        conn.useWebSocket = false
+                        self.connections[hostId] = conn
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleWebSocketText(_ text: String, hostId: UUID, host: RemoteHost) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let kind = json["kind"] as? String else { return }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        if kind == "snapshot" {
+            guard let agentsJSON = json["agents"],
+                  let agentsData = try? JSONSerialization.data(withJSONObject: agentsJSON),
+                  var agents = try? decoder.decode([Agent].self, from: agentsData) else { return }
+            agents = agents.map { var a = $0; a.host = host.sshDestination; return a }
+            connections[hostId]?.agents = agents
+        } else if kind == "event" {
+            guard let eventJSON = json["event"],
+                  let eventData = try? JSONSerialization.data(withJSONObject: eventJSON),
+                  let event = try? decoder.decode(SocketMessage.self, from: eventData) else { return }
+            applyEvent(event, hostId: hostId, host: host)
+        }
+    }
+
+    private func applyEvent(_ event: SocketMessage, hostId: UUID, host: RemoteHost) {
+        guard var conn = connections[hostId] else { return }
+
+        switch event.type {
+        case .register:
+            var agent = Agent(
+                sessionId: event.sessionId,
+                name: event.name ?? NameGenerator.generate(from: event.sessionId),
+                avatarSeed: event.avatarSeed ?? event.sessionId,
+                cwd: event.cwd,
+                agentType: event.agentType ?? "claude",
+                model: event.model,
+                tmuxSession: event.tmuxSession,
+                host: host.sshDestination,
+                status: event.status ?? .idle
+            )
+            conn.agents.removeAll { $0.sessionId == event.sessionId }
+            conn.agents.append(agent)
+
+        case .deregister:
+            conn.agents.removeAll { $0.sessionId == event.sessionId }
+
+        case .updateStatus, .updateTool, .notification, .subagentStart, .subagentStop, .updateTokens:
+            if let idx = conn.agents.firstIndex(where: { $0.sessionId == event.sessionId }) {
+                var agent = conn.agents[idx]
+                agent.lastActivityAt = event.timestamp
+                if let status = event.status { agent.status = status }
+                if let toolName = event.toolName { agent.currentToolName = toolName }
+                if event.type == .subagentStart { agent.subagentCount += 1 }
+                if event.type == .subagentStop { agent.subagentCount = max(0, agent.subagentCount - 1) }
+                if let input = event.inputTokens { agent.totalInputTokens = input }
+                if let output = event.outputTokens { agent.totalOutputTokens = output }
+                if let cacheCreation = event.cacheCreationTokens { agent.totalCacheCreationTokens = cacheCreation }
+                if let cacheRead = event.cacheReadTokens { agent.totalCacheReadTokens = cacheRead }
+                if let notifType = event.notificationType { agent.lastNotificationType = notifType }
+                if let msg = event.notificationMessage { agent.notificationMessage = msg }
+                if let path = event.transcriptPath { agent.transcriptPath = path }
+                conn.agents[idx] = agent
+            }
+        }
+
+        connections[hostId] = conn
     }
 
     // MARK: - Client registration
@@ -300,7 +450,7 @@ final class RemoteHostManager {
 
         guard let bodyData = try? JSONEncoder().encode(body) else { return }
 
-        var request = URLRequest(url: url)
+        var request = authenticatedRequest(url: url, hostId: hostId)
         request.httpMethod = "POST"
         request.httpBody = bodyData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -361,7 +511,7 @@ final class RemoteHostManager {
             return
         }
 
-        var request = URLRequest(url: url)
+        var request = authenticatedRequest(url: url, hostId: host.id)
         request.httpMethod = "POST"
         request.httpBody = bodyData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

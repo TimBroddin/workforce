@@ -6,8 +6,14 @@ final class HTTPServer {
     private let store: AgentStore
     private let eventLog: EventLog
     private let clientRegistry: ClientRegistry
+    private let wsManager: WebSocketManager
     private let portFilePath: String
     private let encoder: JSONEncoder
+    let apiToken: String
+
+    static var tokenFilePath: String {
+        "/tmp/workforce-\(getuid()).token"
+    }
 
     init(store: AgentStore, eventLog: EventLog, clientRegistry: ClientRegistry) {
         self.store = store
@@ -15,9 +21,24 @@ final class HTTPServer {
         self.clientRegistry = clientRegistry
         self.portFilePath = "/tmp/workforce-\(getuid()).port"
 
+        // Generate or load existing API token
+        let tokenPath = Self.tokenFilePath
+        if let existing = try? String(contentsOfFile: tokenPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           !existing.isEmpty {
+            self.apiToken = existing
+        } else {
+            self.apiToken = UUID().uuidString
+        }
+
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601
         self.encoder = enc
+
+        let ws = WebSocketManager(store: store)
+        self.wsManager = ws
+        store.onStateChange = { [weak ws] message in
+            ws?.broadcast(message)
+        }
     }
 
     func start(listenOnAllInterfaces: Bool = false) throws {
@@ -52,9 +73,11 @@ final class HTTPServer {
     }
 
     func stop() {
+        wsManager.removeAllConnections()
         listener?.cancel()
         listener = nil
         try? FileManager.default.removeItem(atPath: portFilePath)
+        try? FileManager.default.removeItem(atPath: Self.tokenFilePath)
     }
 
     // MARK: - Port file
@@ -62,6 +85,9 @@ final class HTTPServer {
     private func writePortFile(port: UInt16) {
         let data = Data("\(port)".utf8)
         FileManager.default.createFile(atPath: portFilePath, contents: data)
+
+        let tokenData = Data(apiToken.utf8)
+        FileManager.default.createFile(atPath: Self.tokenFilePath, contents: tokenData, attributes: [.posixPermissions: 0o600])
     }
 
     // MARK: - Connection handling
@@ -146,6 +172,24 @@ final class HTTPServer {
         return nil
     }
 
+    // MARK: - Authentication
+
+    private func parseAuthToken(from headerData: Data) -> String? {
+        guard let headerString = String(data: headerData, encoding: .utf8) else { return nil }
+        let lines = headerString.split(separator: "\r\n")
+        for line in lines {
+            let lower = line.lowercased()
+            if lower.hasPrefix("authorization:") {
+                let value = line.dropFirst("authorization:".count).trimmingCharacters(in: .whitespaces)
+                if value.hasPrefix("Bearer ") {
+                    return String(value.dropFirst("Bearer ".count))
+                }
+                return value
+            }
+        }
+        return nil
+    }
+
     // MARK: - Request parsing & routing
 
     private func processRequest(_ headerData: Data, body: Data, on connection: NWConnection) {
@@ -156,6 +200,34 @@ final class HTTPServer {
 
         let method = requestLine.method
         let path = requestLine.path
+
+        // Allow OPTIONS without auth (CORS preflight)
+        if method == "OPTIONS" {
+            sendResponse(on: connection, status: "204 No Content", body: "")
+            return
+        }
+
+        // WebSocket upgrade: GET /api/ws with Upgrade headers
+        if method == "GET" && path == "/api/ws" && isWebSocketUpgrade(headerData: headerData) {
+            let token = requestLine.queryParam("token") ?? parseAuthToken(from: headerData)
+            guard token == apiToken else {
+                sendResponse(on: connection, status: "401 Unauthorized", body: #"{"error":"unauthorized"}"#)
+                return
+            }
+            guard let wsKey = parseHeader("Sec-WebSocket-Key", from: headerData) else {
+                sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"missing Sec-WebSocket-Key"}"#)
+                return
+            }
+            wsManager.upgradeConnection(connection, secWebSocketKey: wsKey)
+            return // Do NOT cancel — connection is now a WebSocket
+        }
+
+        // Verify API token
+        let token = parseAuthToken(from: headerData)
+        if token != apiToken {
+            sendResponse(on: connection, status: "401 Unauthorized", body: #"{"error":"unauthorized"}"#)
+            return
+        }
 
         switch (method, path) {
         case ("GET", "/api/agents"):
@@ -178,8 +250,6 @@ final class HTTPServer {
         case ("DELETE", let p) where p.hasPrefix("/api/agents/"):
             let id = String(p.dropFirst("/api/agents/".count))
             handleDeleteAgent(id: id, on: connection)
-        case ("OPTIONS", _):
-            sendResponse(on: connection, status: "204 No Content", body: "")
         default:
             sendResponse(on: connection, status: "404 Not Found", body: #"{"error":"not found"}"#)
         }
@@ -188,6 +258,18 @@ final class HTTPServer {
     private struct RequestLine {
         let method: String
         let path: String
+        let query: String?
+
+        func queryParam(_ name: String) -> String? {
+            guard let query else { return nil }
+            for pair in query.split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2, kv[0] == name {
+                    return String(kv[1])
+                }
+            }
+            return nil
+        }
     }
 
     private func parseRequestLine(from data: Data) -> RequestLine? {
@@ -200,14 +282,45 @@ final class HTTPServer {
         guard parts.count >= 2 else { return nil }
 
         let method = String(parts[0])
-        var path = String(parts[1])
+        let rawPath = String(parts[1])
 
-        // Strip query string
-        if let queryIndex = path.firstIndex(of: "?") {
-            path = String(path[path.startIndex..<queryIndex])
+        var path: String
+        var query: String?
+        if let queryIndex = rawPath.firstIndex(of: "?") {
+            path = String(rawPath[rawPath.startIndex..<queryIndex])
+            query = String(rawPath[rawPath.index(after: queryIndex)...])
+        } else {
+            path = rawPath
         }
 
-        return RequestLine(method: method, path: path)
+        return RequestLine(method: method, path: path, query: query)
+    }
+
+    private func isWebSocketUpgrade(headerData: Data) -> Bool {
+        guard let headerString = String(data: headerData, encoding: .utf8) else { return false }
+        var hasUpgrade = false
+        var hasConnection = false
+        for line in headerString.split(separator: "\r\n") {
+            let lower = line.lowercased()
+            if lower.hasPrefix("upgrade:") && lower.contains("websocket") {
+                hasUpgrade = true
+            }
+            if lower.hasPrefix("connection:") && lower.contains("upgrade") {
+                hasConnection = true
+            }
+        }
+        return hasUpgrade && hasConnection
+    }
+
+    private func parseHeader(_ name: String, from headerData: Data) -> String? {
+        guard let headerString = String(data: headerData, encoding: .utf8) else { return nil }
+        let target = name.lowercased() + ":"
+        for line in headerString.split(separator: "\r\n") {
+            if line.lowercased().hasPrefix(target) {
+                return line.dropFirst(target.count).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
     }
 
     // MARK: - Handlers
@@ -294,6 +407,10 @@ final class HTTPServer {
         "claude", "codex", "opencode", "bash",
     ]
 
+    private static let allowedAgentFlags: Set<String> = [
+        "--dangerously-skip-permissions",
+    ]
+
     private func handleSpawnAgent(body: Data, on connection: NWConnection) {
         struct SpawnRequest: Decodable {
             let cwd: String?
@@ -305,11 +422,18 @@ final class HTTPServer {
         let cwd = request?.cwd ?? "~"
         let agentType = request?.agentType ?? "claude"
 
-        // Validate that the base command (first word) is in the allowlist
-        let baseCommand = agentType.split(separator: " ").first.map(String.init) ?? agentType
-        guard Self.allowedAgentCommands.contains(baseCommand) else {
+        // Validate that the base command and all flags are in the allowlist
+        let parts = agentType.split(separator: " ").map(String.init)
+        guard let baseCommand = parts.first, Self.allowedAgentCommands.contains(baseCommand) else {
             sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"agent type not allowed"}"#)
             return
+        }
+        let flags = Array(parts.dropFirst())
+        for flag in flags {
+            guard Self.allowedAgentFlags.contains(flag) else {
+                sendResponse(on: connection, status: "400 Bad Request", body: #"{"error":"agent flag not allowed: \#(flag)"}"#)
+                return
+            }
         }
 
         if let sessionId = store.spawnAgent(cwd: cwd, agentType: agentType) {
@@ -327,9 +451,9 @@ final class HTTPServer {
             "Content-Type: application/json",
             "Content-Length: \(body.utf8.count)",
             "Connection: close",
-            "Access-Control-Allow-Origin: *",
-            "Access-Control-Allow-Methods: GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers: Content-Type",
+            "Access-Control-Allow-Origin: http://localhost",
+            "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers: Content-Type, Authorization",
             "",
             body,
         ].joined(separator: "\r\n")
