@@ -1,5 +1,5 @@
 {
-  "name": "workforce",
+  "name": "workforce-cli",
   "version": "0.1.0",
   "type": "module",
   "bin": {
@@ -7,6 +7,18 @@
   },
   "scripts": {
     "daemon": "bun run daemon/index.ts",
-    "test": "bun test"
-  }
+    "test": "bun test",
+    "test:unit": "bun test daemon/",
+    "test:integration": "bun test test/ --timeout 15000"
+  },
+  "files": [
+    "cli/",
+    "daemon/",
+    "shared/"
+  ],
+  "engines": {
+    "bun": ">=1.3.5"
+  },
+  "keywords": ["ai", "agent", "terminal", "pty", "claude"],
+  "license": "MIT"
 }
