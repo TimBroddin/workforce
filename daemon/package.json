@@ -1,0 +1,12 @@
+{
+  "name": "workforce",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "workforce": "./cli/index.ts"
+  },
+  "scripts": {
+    "daemon": "bun run daemon/index.ts",
+    "test": "bun test"
+  }
+}
