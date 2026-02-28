@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Agent, SpawnRequest } from "../shared/types";
@@ -19,7 +19,9 @@ export async function ensureDaemon(): Promise<{ port: number; token: string }> {
       const token = await Bun.file(TOKEN_PATH).text();
       return { port, token: token.trim() };
     } catch {
-      // PID stale, daemon not running
+      // PID stale, clean up before restarting
+      try { unlinkSync(PID_PATH); } catch {}
+      try { unlinkSync(PORT_PATH); } catch {}
     }
   }
 

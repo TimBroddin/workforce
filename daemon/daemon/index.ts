@@ -1,5 +1,5 @@
 // daemon/daemon/index.ts
-import { mkdirSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadOrCreateToken, validateToken } from "./auth";
@@ -247,7 +247,13 @@ const server = Bun.serve<WsData>({
         const { agentId } = data as TerminalWsData;
         if (typeof message === "string") {
           // JSON control message (resize)
-          const ctrl = JSON.parse(message) as TerminalControlMessage;
+          let ctrl: TerminalControlMessage;
+          try {
+            ctrl = JSON.parse(message) as TerminalControlMessage;
+          } catch {
+            console.warn("Invalid JSON in terminal WebSocket message");
+            return;
+          }
           if (ctrl.type === "resize") {
             (data as TerminalWsData).cols = ctrl.cols;
             (data as TerminalWsData).rows = ctrl.rows;
@@ -259,7 +265,13 @@ const server = Bun.serve<WsData>({
           ptyManager.write(agentId, new Uint8Array(message as ArrayBuffer));
         }
       } else if (data.type === "control") {
-        const msg = JSON.parse(message as string) as ClientControlMessage;
+        let msg: ClientControlMessage;
+        try {
+          msg = JSON.parse(message as string) as ClientControlMessage;
+        } catch {
+          console.warn("Invalid JSON in control WebSocket message");
+          return;
+        }
         switch (msg.type) {
           case "snapshot":
             ws.send(JSON.stringify({ type: "agents", agents: store.listAgents() }));
@@ -313,6 +325,8 @@ process.on("SIGTERM", async () => {
   ptyManager.killAll();
   await store.persist();
   server.stop();
+  try { unlinkSync(PID_PATH); } catch {}
+  try { unlinkSync(PORT_PATH); } catch {}
   process.exit(0);
 });
 
@@ -321,5 +335,7 @@ process.on("SIGINT", async () => {
   ptyManager.killAll();
   await store.persist();
   server.stop();
+  try { unlinkSync(PID_PATH); } catch {}
+  try { unlinkSync(PORT_PATH); } catch {}
   process.exit(0);
 });

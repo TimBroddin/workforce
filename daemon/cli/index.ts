@@ -134,8 +134,14 @@ async function main() {
 
 async function handleHook(hookName: string, client: DaemonClient) {
   // Read JSON from stdin
-  const stdin = await Bun.stdin.text();
-  const event = JSON.parse(stdin);
+  let event: any;
+  try {
+    const stdin = await Bun.stdin.text();
+    event = JSON.parse(stdin);
+  } catch {
+    // Stdin read or parse failed — exit silently
+    process.exit(0);
+  }
 
   // Resolve session ID
   const sessionId =

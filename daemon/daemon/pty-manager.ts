@@ -43,7 +43,7 @@ export class PTYManager {
     const proc = Bun.spawn({
       cmd: opts.cmd,
       cwd: opts.cwd,
-      env: opts.env ?? { ...process.env, WORKFORCE_SESSION: id },
+      env: { ...process.env, ...opts.env, WORKFORCE_SESSION: id },
       terminal: {
         cols,
         rows,

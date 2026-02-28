@@ -74,7 +74,7 @@ export async function attachTerminal(
     }
 
     // Handle SIGINT — detach gracefully
-    process.on("SIGINT", () => {
+    process.once("SIGINT", () => {
       ws.close();
     });
   });
