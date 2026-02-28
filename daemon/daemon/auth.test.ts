@@ -30,6 +30,17 @@ test("loadOrCreateToken returns existing token", async () => {
   expect(token1).toBe(token2);
 });
 
+test("loadOrCreateToken warns and regenerates for empty file", async () => {
+  await Bun.write(TEST_TOKEN_PATH, "");
+  const warn = console.warn;
+  let warned = false;
+  console.warn = () => { warned = true; };
+  const token = await loadOrCreateToken(TEST_TOKEN_PATH);
+  console.warn = warn;
+  expect(warned).toBe(true);
+  expect(token).toMatch(/^[a-f0-9-]{36}$/);
+});
+
 test("validateToken accepts valid token", async () => {
   const token = await loadOrCreateToken(TEST_TOKEN_PATH);
   expect(validateToken(`Bearer ${token}`, token)).toBe(true);
@@ -37,6 +48,10 @@ test("validateToken accepts valid token", async () => {
 
 test("validateToken rejects invalid token", async () => {
   expect(validateToken("Bearer wrong", "correct")).toBe(false);
+});
+
+test("validateToken rejects non-Bearer auth header", () => {
+  expect(validateToken("Basic dXNlcjpwYXNz", "correct")).toBe(false);
 });
 
 test("validateToken accepts query param token", async () => {
