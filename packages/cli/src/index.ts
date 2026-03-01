@@ -4,6 +4,7 @@ import { ensureDaemon, DaemonClient } from "./daemon-client";
 import { attachTerminal } from "./terminal";
 import { installHooks, uninstallHooks } from "./hooks";
 import { ALLOWED_AGENT_TYPES } from "shared";
+import { parseTranscriptTokens } from "shared/transcript";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -165,6 +166,30 @@ async function handleHook(hookName: string, client: DaemonClient) {
 
   const now = new Date().toISOString();
 
+  // Special-case session-end: parse transcript tokens before deregistering
+  if (hookName === "session-end") {
+    if (event.transcript_path) {
+      const tokens = await parseTranscriptTokens(event.transcript_path);
+      await client.postEvent({
+        type: "updateTokens",
+        session_id: sessionId,
+        cwd: event.cwd,
+        timestamp: now,
+        input_tokens: tokens.inputTokens,
+        output_tokens: tokens.outputTokens,
+        cache_creation_tokens: tokens.cacheCreationTokens,
+        cache_read_tokens: tokens.cacheReadTokens,
+      });
+    }
+    await client.postEvent({
+      type: "deregister",
+      session_id: sessionId,
+      cwd: event.cwd,
+      timestamp: now,
+    });
+    return;
+  }
+
   const messageMap: Record<string, any> = {
     "session-start": {
       type: "updateStatus",
@@ -173,12 +198,6 @@ async function handleHook(hookName: string, client: DaemonClient) {
       timestamp: now,
       status: "active",
       transcript_path: event.transcript_path,
-    },
-    "session-end": {
-      type: "deregister",
-      session_id: sessionId,
-      cwd: event.cwd,
-      timestamp: now,
     },
     "pre-tool-use": {
       type: "updateTool",
