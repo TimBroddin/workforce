@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import type { Agent, SocketMessage } from "../shared/types";
+import type { Agent, SocketMessage } from "shared";
 
 export class AgentStore {
   private agents = new Map<string, Agent>();

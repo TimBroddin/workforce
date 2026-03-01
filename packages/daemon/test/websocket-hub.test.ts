@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { WebSocketHub } from "./websocket-hub";
+import { WebSocketHub } from "../src/websocket-hub";
 
 test("WebSocketHub tracks control connections", () => {
   const hub = new WebSocketHub();

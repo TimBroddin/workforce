@@ -6,9 +6,6 @@
     "types": ["bun-types"],
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "outDir": "./dist",
-    "rootDir": "."
-  },
-  "include": ["daemon/**/*.ts", "cli/**/*.ts", "shared/**/*.ts"]
+    "skipLibCheck": true
+  }
 }

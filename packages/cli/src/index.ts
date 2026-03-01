@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-// daemon/cli/index.ts
+// packages/cli/src/index.ts
 import { ensureDaemon, DaemonClient } from "./daemon-client";
 import { attachTerminal } from "./terminal";
-import { ALLOWED_AGENT_TYPES } from "../shared/types";
+import { ALLOWED_AGENT_TYPES } from "shared";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -24,7 +24,7 @@ async function main() {
     if (sub === "status") {
       return daemonStatus();
     }
-    console.log("Usage: workforce daemon [start|stop|status]");
+    console.log("Usage: agenthub daemon [start|stop|status]");
     return;
   }
 
@@ -57,7 +57,7 @@ async function main() {
   if (command === "attach") {
     const agentId = args[1];
     if (!agentId) {
-      console.error("Usage: workforce attach <agent-id>");
+      console.error("Usage: agenthub attach <agent-id>");
       process.exit(1);
     }
     // Support short IDs
@@ -76,7 +76,7 @@ async function main() {
   if (command === "kill") {
     const agentId = args[1];
     if (!agentId) {
-      console.error("Usage: workforce kill <agent-id>");
+      console.error("Usage: agenthub kill <agent-id>");
       process.exit(1);
     }
     const agents = await client.listAgents();
@@ -117,13 +117,13 @@ async function main() {
 
   if (useTmux) {
     const proc = Bun.spawn({
-      cmd: ["tmux", "new-session", "-s", `workforce-${agentId.slice(0, 8)}`, "--", "workforce", "attach", agentId],
+      cmd: ["tmux", "new-session", "-s", `agenthub-${agentId.slice(0, 8)}`, "--", "agenthub", "attach", agentId],
       stdio: ["inherit", "inherit", "inherit"],
     });
     await proc.exited;
   } else if (useZellij) {
     const proc = Bun.spawn({
-      cmd: ["zellij", "run", "--", "workforce", "attach", agentId],
+      cmd: ["zellij", "run", "--", "agenthub", "attach", agentId],
       stdio: ["inherit", "inherit", "inherit"],
     });
     await proc.exited;
@@ -145,7 +145,7 @@ async function handleHook(hookName: string, client: DaemonClient) {
 
   // Resolve session ID
   const sessionId =
-    process.env.WORKFORCE_SESSION ?? event.session_id;
+    process.env.AGENTHUB_SESSION ?? event.session_id;
 
   const now = new Date().toISOString();
 
@@ -229,7 +229,7 @@ async function handleHook(hookName: string, client: DaemonClient) {
 }
 
 async function daemonStop() {
-  const pidPath = join(homedir(), ".workforce", "daemon.pid");
+  const pidPath = join(homedir(), ".agenthub", "daemon.pid");
   if (!existsSync(pidPath)) {
     console.log("Daemon not running.");
     return;
@@ -244,8 +244,8 @@ async function daemonStop() {
 }
 
 async function daemonStatus() {
-  const pidPath = join(homedir(), ".workforce", "daemon.pid");
-  const portPath = join(homedir(), ".workforce", "daemon.port");
+  const pidPath = join(homedir(), ".agenthub", "daemon.pid");
+  const portPath = join(homedir(), ".agenthub", "daemon.port");
   if (!existsSync(pidPath)) {
     console.log("Daemon: not running");
     return;
@@ -261,16 +261,16 @@ async function daemonStatus() {
 }
 
 async function installLaunchd() {
-  const plistPath = join(homedir(), "Library/LaunchAgents/com.workforce.daemon.plist");
+  const plistPath = join(homedir(), "Library/LaunchAgents/com.agenthub.daemon.plist");
   const bunPath = Bun.which("bun") ?? "/usr/local/bin/bun";
-  const daemonScript = join(import.meta.dir, "../daemon/index.ts");
+  const daemonScript = join(import.meta.dir, "../../daemon/src/index.ts");
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.workforce.daemon</string>
+    <string>com.agenthub.daemon</string>
     <key>ProgramArguments</key>
     <array>
         <string>${bunPath}</string>
@@ -282,20 +282,20 @@ async function installLaunchd() {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>${join(homedir(), ".workforce/daemon.stdout.log")}</string>
+    <string>${join(homedir(), ".agenthub/daemon.stdout.log")}</string>
     <key>StandardErrorPath</key>
-    <string>${join(homedir(), ".workforce/daemon.stderr.log")}</string>
+    <string>${join(homedir(), ".agenthub/daemon.stderr.log")}</string>
 </dict>
 </plist>`;
 
   await Bun.write(plistPath, plist);
   const proc = Bun.spawn({ cmd: ["launchctl", "load", plistPath] });
   await proc.exited;
-  console.log("Installed and started workforce daemon via launchd.");
+  console.log("Installed and started agenthub daemon via launchd.");
 }
 
 async function uninstallLaunchd() {
-  const plistPath = join(homedir(), "Library/LaunchAgents/com.workforce.daemon.plist");
+  const plistPath = join(homedir(), "Library/LaunchAgents/com.agenthub.daemon.plist");
   if (!existsSync(plistPath)) {
     console.log("Not installed.");
     return;
@@ -304,7 +304,7 @@ async function uninstallLaunchd() {
   await proc.exited;
   const { unlinkSync } = await import("node:fs");
   unlinkSync(plistPath);
-  console.log("Uninstalled workforce daemon from launchd.");
+  console.log("Uninstalled agenthub daemon from launchd.");
 }
 
 main().catch((err) => {

@@ -1,9 +1,9 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { AgentStore } from "./agent-store";
-import type { Agent, SocketMessage } from "../shared/types";
+import { AgentStore } from "../src/agent-store";
+import type { Agent, SocketMessage } from "shared";
 
-const TEST_DIR = "/tmp/workforce-test-store";
+const TEST_DIR = "/tmp/agenthub-test-store";
 const TEST_AGENTS_PATH = `${TEST_DIR}/agents.json`;
 
 beforeEach(() => {

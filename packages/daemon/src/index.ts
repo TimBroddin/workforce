@@ -1,4 +1,4 @@
-// daemon/daemon/index.ts
+// packages/daemon/src/index.ts
 import { mkdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -13,16 +13,16 @@ import {
   type SocketMessage,
   type ClientControlMessage,
   type TerminalControlMessage,
-} from "../shared/types";
+} from "shared";
 
-const WORKFORCE_DIR = join(homedir(), ".workforce");
-const TOKEN_PATH = join(WORKFORCE_DIR, "daemon.token");
-const PORT_PATH = join(WORKFORCE_DIR, "daemon.port");
-const PID_PATH = join(WORKFORCE_DIR, "daemon.pid");
-const AGENTS_PATH = join(WORKFORCE_DIR, "agents.json");
+const AGENTHUB_DIR = join(homedir(), ".agenthub");
+const TOKEN_PATH = join(AGENTHUB_DIR, "daemon.token");
+const PORT_PATH = join(AGENTHUB_DIR, "daemon.port");
+const PID_PATH = join(AGENTHUB_DIR, "daemon.pid");
+const AGENTS_PATH = join(AGENTHUB_DIR, "agents.json");
 
 // Ensure config dir exists
-mkdirSync(WORKFORCE_DIR, { recursive: true });
+mkdirSync(AGENTHUB_DIR, { recursive: true });
 
 // Initialize components
 const token = await loadOrCreateToken(TOKEN_PATH);
@@ -317,7 +317,7 @@ const server = Bun.serve<WsData>({
 await Bun.write(PORT_PATH, String(server.port));
 await Bun.write(PID_PATH, String(process.pid));
 
-console.log(`Workforce daemon running on port ${server.port}`);
+console.log(`AgentHub daemon running on port ${server.port}`);
 
 // Graceful shutdown
 process.on("SIGTERM", async () => {

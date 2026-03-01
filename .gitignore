@@ -13,8 +13,12 @@ Package.resolved
 # macOS
 .DS_Store
 
-# Bundled binary (build artifact, rebuild with: cd WorkforceKit && swift build -c release)
-Workforce/Workforce/Resources/workforce
+# Bundled binary (build artifact, rebuild with: cd packages/desktop/WorkforceKit && swift build -c release)
+packages/desktop/Workforce/Workforce/Resources/workforce
+
+# Node
+node_modules/
+bun.lock
 
 # Claude
 .claude/

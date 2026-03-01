@@ -1,0 +1,13 @@
+{
+  "name": "daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "shared": "workspace:*"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test test/"
+  }
+}

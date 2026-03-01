@@ -1,13 +1,13 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Agent, SpawnRequest } from "../shared/types";
+import type { Agent, SpawnRequest } from "shared";
 
-const WORKFORCE_DIR = join(homedir(), ".workforce");
-const TOKEN_PATH = join(WORKFORCE_DIR, "daemon.token");
-const PORT_PATH = join(WORKFORCE_DIR, "daemon.port");
-const PID_PATH = join(WORKFORCE_DIR, "daemon.pid");
-const DAEMON_ENTRY = join(import.meta.dir, "../daemon/index.ts");
+const AGENTHUB_DIR = join(homedir(), ".agenthub");
+const TOKEN_PATH = join(AGENTHUB_DIR, "daemon.token");
+const PORT_PATH = join(AGENTHUB_DIR, "daemon.port");
+const PID_PATH = join(AGENTHUB_DIR, "daemon.pid");
+const DAEMON_ENTRY = join(import.meta.dir, "../../daemon/src/index.ts");
 
 export async function ensureDaemon(): Promise<{ port: number; token: string }> {
   // Check if daemon is already running
@@ -26,7 +26,7 @@ export async function ensureDaemon(): Promise<{ port: number; token: string }> {
   }
 
   // Start daemon
-  console.log("Starting workforce daemon...");
+  console.log("Starting agenthub daemon...");
   Bun.spawn({
     cmd: ["bun", "run", DAEMON_ENTRY],
     stdio: ["ignore", "ignore", "ignore"],

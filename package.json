@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "workspaces": ["packages/shared", "packages/daemon", "packages/cli"],
+  "scripts": {
+    "test": "bun test packages/",
+    "test:unit": "bun test packages/daemon/test/",
+    "test:integration": "bun test packages/cli/test/ --timeout 15000",
+    "daemon": "bun run packages/daemon/src/index.ts"
+  }
+}

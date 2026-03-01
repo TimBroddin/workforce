@@ -1,4 +1,4 @@
-// daemon/shared/types.ts
+// packages/shared/src/types.ts
 
 export type AgentStatus =
   | "active"

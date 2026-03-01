@@ -1,8 +1,8 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { existsSync, unlinkSync, mkdirSync } from "node:fs";
-import { generateToken, loadOrCreateToken, validateToken } from "./auth";
+import { generateToken, loadOrCreateToken, validateToken } from "../src/auth";
 
-const TEST_DIR = "/tmp/workforce-test-auth";
+const TEST_DIR = "/tmp/agenthub-test-auth";
 const TEST_TOKEN_PATH = `${TEST_DIR}/daemon.token`;
 
 beforeEach(() => {

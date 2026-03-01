@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from "bun";
-import type { DaemonControlMessage } from "../shared/types";
+import type { DaemonControlMessage } from "shared";
 
 export interface TerminalWsData {
   type: "terminal";

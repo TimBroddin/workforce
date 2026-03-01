@@ -1,5 +1,5 @@
 import { test, expect, afterEach } from "bun:test";
-import { PTYManager } from "./pty-manager";
+import { PTYManager } from "../src/pty-manager";
 
 const manager = new PTYManager();
 

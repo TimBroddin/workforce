@@ -1,14 +1,14 @@
-// daemon/test/integration.test.ts
+// packages/cli/test/integration.test.ts
 import { test, expect, beforeAll, afterAll, describe } from "bun:test";
 import { join } from "node:path";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
-import type { Agent } from "../shared/types";
+import type { Agent } from "shared";
 
-const TEST_HOME = "/tmp/workforce-integration-test";
-const WORKFORCE_DIR = join(TEST_HOME, ".workforce");
-const TOKEN_PATH = join(WORKFORCE_DIR, "daemon.token");
-const PORT_PATH = join(WORKFORCE_DIR, "daemon.port");
-const DAEMON_ENTRY = join(import.meta.dir, "../daemon/index.ts");
+const TEST_HOME = "/tmp/agenthub-integration-test";
+const AGENTHUB_DIR = join(TEST_HOME, ".agenthub");
+const TOKEN_PATH = join(AGENTHUB_DIR, "daemon.token");
+const PORT_PATH = join(AGENTHUB_DIR, "daemon.port");
+const DAEMON_ENTRY = join(import.meta.dir, "../../daemon/src/index.ts");
 
 let daemonProcess: ReturnType<typeof Bun.spawn>;
 let baseUrl: string;
@@ -32,7 +32,7 @@ describe("Daemon integration tests", () => {
     if (existsSync(TEST_HOME)) {
       rmSync(TEST_HOME, { recursive: true, force: true });
     }
-    mkdirSync(WORKFORCE_DIR, { recursive: true });
+    mkdirSync(AGENTHUB_DIR, { recursive: true });
 
     // Start the daemon with a test-specific HOME
     daemonProcess = Bun.spawn(["bun", "run", DAEMON_ENTRY], {
