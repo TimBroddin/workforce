@@ -28,6 +28,7 @@ export interface Agent {
   totalOutputTokens: number;
   totalCacheCreationTokens: number;
   totalCacheReadTokens: number;
+  pid?: number; // child process PID, set on spawn
 }
 
 export type SocketMessageType =

@@ -71,6 +71,7 @@ function handleSpawn(req: SpawnRequest): { agentId: string } | { error: string }
     },
   });
 
+  const session = ptyManager.getSession(agentId);
   const now = new Date().toISOString();
   store.addAgent({
     sessionId: agentId,
@@ -86,6 +87,7 @@ function handleSpawn(req: SpawnRequest): { agentId: string } | { error: string }
     totalOutputTokens: 0,
     totalCacheCreationTokens: 0,
     totalCacheReadTokens: 0,
+    pid: session?.process.pid,
   });
 
   store.persist();
