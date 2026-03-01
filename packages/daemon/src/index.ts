@@ -28,6 +28,24 @@ mkdirSync(AGENTHUB_DIR, { recursive: true });
 const token = await loadOrCreateToken(TOKEN_PATH);
 const store = new AgentStore(AGENTS_PATH);
 await store.load();
+
+// Re-adopt orphaned agents from previous daemon run
+for (const agent of store.listAgents()) {
+  if (!agent.pid) {
+    store.removeAgent(agent.sessionId);
+    continue;
+  }
+  try {
+    process.kill(agent.pid, 0); // Check if process is alive
+    agent.status = "orphaned";
+    agent.lastActivityAt = new Date().toISOString();
+  } catch {
+    // Process is dead, remove from store
+    store.removeAgent(agent.sessionId);
+  }
+}
+await store.persist();
+
 const ptyManager = new PTYManager();
 const hub = new WebSocketHub();
 
@@ -166,7 +184,12 @@ const server = Bun.serve<WsData>({
       if (req.method === "DELETE") {
         const agent = store.getAgent(agentId);
         if (!agent) return Response.json({ error: "Not found" }, { status: 404 });
-        ptyManager.kill(agentId);
+        // Try PTY kill first, fall back to PID kill for orphaned agents
+        if (ptyManager.getSession(agentId)) {
+          ptyManager.kill(agentId);
+        } else if (agent.pid) {
+          try { process.kill(agent.pid, "SIGTERM"); } catch {}
+        }
         store.removeAgent(agentId);
         store.persist();
         hub.broadcastControl({ type: "agents", agents: store.listAgents() });
@@ -264,7 +287,7 @@ const server = Bun.serve<WsData>({
           }
         } else {
           // Binary frame — stdin to PTY
-          ptyManager.write(agentId, new Uint8Array(message as ArrayBuffer));
+          ptyManager.write(agentId, message as BufferSource);
         }
       } else if (data.type === "control") {
         let msg: ClientControlMessage;

@@ -5,7 +5,8 @@ export type AgentStatus =
   | "waitingForInput"
   | "waitingForPermission"
   | "idle"
-  | "stopped";
+  | "stopped"
+  | "orphaned";
 
 export interface Agent {
   sessionId: string;
