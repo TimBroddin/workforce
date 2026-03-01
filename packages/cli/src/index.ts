@@ -2,6 +2,7 @@
 // packages/cli/src/index.ts
 import { ensureDaemon, DaemonClient } from "./daemon-client";
 import { attachTerminal } from "./terminal";
+import { installHooks, uninstallHooks } from "./hooks";
 import { ALLOWED_AGENT_TYPES } from "shared";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,21 @@ async function main() {
 
   if (command === "uninstall") {
     return uninstallLaunchd();
+  }
+
+  if (command === "install-hooks") {
+    const binaryPath = process.argv[0] ?? Bun.which("agenthub") ?? "agenthub";
+    const settingsPath = join(homedir(), ".claude", "settings.json");
+    await installHooks(binaryPath, settingsPath);
+    console.log("Hooks installed to ~/.claude/settings.json");
+    return;
+  }
+
+  if (command === "uninstall-hooks") {
+    const settingsPath = join(homedir(), ".claude", "settings.json");
+    await uninstallHooks(settingsPath);
+    console.log("Hooks removed from ~/.claude/settings.json");
+    return;
   }
 
   // Commands that need daemon
