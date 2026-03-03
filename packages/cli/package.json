@@ -1,20 +1,29 @@
 {
-  "name": "agenthub",
-  "version": "0.1.0",
+  "name": "@timbroddin/agenthub",
+  "version": "0.3.0",
   "type": "module",
   "bin": {
     "agenthub": "./src/index.ts"
   },
   "dependencies": {
-    "shared": "workspace:*"
+    "shared": "workspace:*",
+    "@timbroddin/agenthub-tui": "workspace:*"
   },
   "scripts": {
     "test": "bun test test/ --timeout 15000"
   },
-  "files": ["src/"],
+  "files": [
+    "src/"
+  ],
   "engines": {
     "bun": ">=1.3.5"
   },
-  "keywords": ["ai", "agent", "terminal", "pty", "claude"],
+  "keywords": [
+    "ai",
+    "agent",
+    "terminal",
+    "pty",
+    "claude"
+  ],
   "license": "MIT"
 }
