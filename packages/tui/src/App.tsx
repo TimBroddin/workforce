@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Box, useApp, useInput, useStdout } from "ink";
+import { Box, useApp, useInput, useStdin, useStdout } from "ink";
 import { useDaemon } from "./hooks/useDaemon";
 import { useTerminal } from "./hooks/useTerminal";
 import { useFocus } from "./hooks/useFocus";
@@ -18,8 +18,11 @@ export function App({ port, token }: Props) {
   const { activePane, toggle } = useFocus();
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const { internal_eventEmitter, setRawMode } = useStdin() as any;
   const [sidebarIndex, setSidebarIndex] = useState(0);
   const prevAgentIdsRef = useRef<Set<string>>(new Set());
+  const activePaneRef = useRef(activePane);
+  activePaneRef.current = activePane;
 
   const items = buildSidebarItems(agents);
 
@@ -27,6 +30,12 @@ export function App({ port, token }: Props) {
   const sidebarWidth = 26; // 24 + 2 border
   const termCols = (stdout?.columns ?? 80) - sidebarWidth - 2; // 2 for terminal border
   const termRows = (stdout?.rows ?? 24) - 2; // 2 for terminal border
+
+  // Ensure raw mode stays enabled
+  useEffect(() => {
+    setRawMode(true);
+    return () => setRawMode(false);
+  }, [setRawMode]);
 
   // Keep sidebar index in bounds
   useEffect(() => {
@@ -60,13 +69,17 @@ export function App({ port, token }: Props) {
     }
   }, [terminal.activeId, agents, termCols, termRows, terminal.select]);
 
-  // useInput is only active when sidebar is focused (isActive option)
-  // When terminal is focused, raw stdin forwarding handles all input
+  // Sidebar input via Ink's useInput (always active to keep raw mode on)
   useInput((input, key) => {
+    // Tab always toggles focus regardless of pane
     if (key.tab) {
       toggle();
       return;
     }
+
+    // Only handle sidebar keys when sidebar is focused
+    if (activePane !== "sidebar") return;
+
     if (key.upArrow) {
       setSidebarIndex((i) => Math.max(0, i - 1));
     } else if (key.downArrow) {
@@ -93,30 +106,31 @@ export function App({ port, token }: Props) {
       terminal.disconnectAll();
       exit();
     }
-  }, { isActive: activePane === "sidebar" });
+  });
 
   // Raw stdin forwarding when terminal is focused
+  // Uses Ink's internal event emitter to get raw input data
   useEffect(() => {
-    if (activePane !== "terminal") return;
+    if (!internal_eventEmitter) return;
 
-    const onData = (data: Buffer) => {
-      // Check for tab key (0x09) to toggle back
-      if (data.length === 1 && data[0] === 0x09) {
+    const handleRawInput = (data: string) => {
+      // Only forward when terminal pane is focused
+      if (activePaneRef.current !== "terminal") return;
+
+      // Tab (0x09) toggles back to sidebar
+      if (data === "\t") {
         toggle();
         return;
       }
+
       terminal.write(data);
     };
 
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.on("data", onData);
-
+    internal_eventEmitter.on("input", handleRawInput);
     return () => {
-      process.stdin.removeListener("data", onData);
+      internal_eventEmitter.removeListener("input", handleRawInput);
     };
-  }, [activePane, terminal.write, toggle]);
+  }, [internal_eventEmitter, terminal.write, toggle]);
 
   return (
     <Box flexDirection="row" width="100%" height="100%">
