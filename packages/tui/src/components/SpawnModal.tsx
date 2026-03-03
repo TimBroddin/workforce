@@ -10,26 +10,33 @@ export function SpawnModal({ folders, selectedIndex }: Props) {
   return (
     <Box
       flexDirection="column"
-      borderStyle="bold"
-      borderColor="cyan"
-      paddingX={2}
+      borderStyle="round"
+      borderColor="#8b5cf6"
+      paddingX={3}
       paddingY={1}
     >
-      <Text bold>Spawn new agent</Text>
-      <Text dimColor>Select folder:</Text>
+      <Text bold color="#e2e8f0">⚡ Spawn New Agent</Text>
+      <Text color="#6b7280">Select a workspace:</Text>
       <Text> </Text>
       {folders.map((folder, i) => (
-        <Text
-          key={folder}
-          backgroundColor={i === selectedIndex ? "cyan" : undefined}
-          color={i === selectedIndex ? "black" : undefined}
-        >
-          {i === selectedIndex ? " ▸ " : "   "}
-          {shortenPath(folder)}
+        <Text key={folder}>
+          {i === selectedIndex
+            ? <Text color="#8b5cf6" bold> ▸ </Text>
+            : <Text color="#374151">   </Text>
+          }
+          <Text
+            backgroundColor={i === selectedIndex ? "#8b5cf6" : undefined}
+            color={i === selectedIndex ? "white" : "#9ca3af"}
+            bold={i === selectedIndex}
+          >
+            {" "}{shortenPath(folder)}{" "}
+          </Text>
         </Text>
       ))}
       <Text> </Text>
-      <Text dimColor>Enter to spawn · Esc to cancel</Text>
+      <Text color="#6b7280">
+        <Text color="#60a5fa" bold>Enter</Text> spawn  <Text color="#60a5fa" bold>Esc</Text> cancel
+      </Text>
     </Box>
   );
 }

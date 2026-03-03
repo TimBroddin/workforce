@@ -34,15 +34,21 @@ export function Sidebar({ agents, selectedIndex, focused, connected }: Props) {
   return (
     <Box
       flexDirection="column"
-      width={24}
-      borderStyle={focused ? "bold" : "single"}
-      borderColor={focused ? "blue" : "gray"}
+      width={32}
+      borderStyle="round"
+      borderColor={focused ? "#3b82f6" : "#374151"}
       paddingX={1}
     >
-      <Text bold>
-        AgentHub {connected ? <Text color="green">●</Text> : <Text color="red">●</Text>}
-      </Text>
-      <Text> </Text>
+      <Box marginBottom={1}>
+        <Text bold color="#e2e8f0">
+          ⚡ AgentHub
+        </Text>
+        <Text> </Text>
+        {connected
+          ? <Text color="#22c55e">connected</Text>
+          : <Text color="#ef4444">offline</Text>
+        }
+      </Box>
       {groups.map((group) => {
         const agentIds = group.agents.map((a) => a.sessionId);
         const selectedItem = items[selectedIndex];
@@ -61,11 +67,21 @@ export function Sidebar({ agents, selectedIndex, focused, connected }: Props) {
         );
       })}
       {agents.length === 0 && (
-        <Text dimColor>No agents running</Text>
+        <Box flexDirection="column" marginY={1} paddingX={2}>
+          <Text color="#6b7280">No agents running</Text>
+          <Text color="#4b5563">Press <Text color="#60a5fa" bold>n</Text> to spawn one</Text>
+        </Box>
       )}
       <Box flexGrow={1} />
-      <Text dimColor>[n] New agent</Text>
-      <Text dimColor>[q] Exit</Text>
+      <Box borderStyle="single" borderColor="#374151" borderTop={false} borderLeft={false} borderRight={false} />
+      <Box flexDirection="column" paddingTop={1}>
+        <Text color="#6b7280">
+          <Text color="#60a5fa" bold>n</Text> new  <Text color="#60a5fa" bold>k</Text> kill  <Text color="#60a5fa" bold>q</Text> quit
+        </Text>
+        <Text color="#6b7280">
+          <Text color="#60a5fa" bold>Tab</Text> switch pane
+        </Text>
+      </Box>
     </Box>
   );
 }

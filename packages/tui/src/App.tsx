@@ -46,7 +46,7 @@ export function App({ port, token }: Props) {
   }
 
   // Terminal dimensions (total minus sidebar width and borders)
-  const sidebarWidth = 26; // 24 + 2 border
+  const sidebarWidth = 34; // 32 + 2 border
   const termCols = (stdout?.columns ?? 80) - sidebarWidth - 2;
   const termRows = (stdout?.rows ?? 24) - 2;
 

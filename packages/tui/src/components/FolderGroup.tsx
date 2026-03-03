@@ -11,9 +11,9 @@ interface Props {
 
 export function FolderGroup({ cwd, agents, selectedId }: Props) {
   return (
-    <Box flexDirection="column">
-      <Text bold dimColor>
-        {shortenPath(cwd)}
+    <Box flexDirection="column" marginBottom={1}>
+      <Text color="#8b5cf6" bold>
+        {"  "}📁 {shortenPath(cwd)}
       </Text>
       {agents.map((agent) => (
         <AgentRow
