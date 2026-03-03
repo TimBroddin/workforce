@@ -5,6 +5,7 @@ import { useTerminal } from "./hooks/useTerminal";
 import { useFocus } from "./hooks/useFocus";
 import { Sidebar, buildSidebarItems } from "./components/Sidebar";
 import { TerminalViewport } from "./components/Terminal";
+import { SpawnModal } from "./components/SpawnModal";
 
 // Parse basic keypress info from raw stdin chunk
 function parseKey(data: string) {
@@ -15,6 +16,8 @@ function parseKey(data: string) {
   if (data === "\x1b") return { name: "escape" } as const;
   return { name: "char", char: data } as const;
 }
+
+type Mode = "normal" | "spawn";
 
 interface Props {
   port: number;
@@ -30,26 +33,35 @@ export function App({ port, token }: Props) {
   const { stdout } = useStdout();
   const { internal_eventEmitter, setRawMode } = useStdin() as any;
   const [sidebarIndex, setSidebarIndex] = useState(0);
+  const [mode, setMode] = useState<Mode>("normal");
+  const [spawnIndex, setSpawnIndex] = useState(0);
   const prevAgentIdsRef = useRef<Set<string>>(new Set());
 
-  // Store latest values in refs for the event handler closure
-  const stateRef = useRef({
-    activePane,
-    sidebarIndex,
-    items: [] as ReturnType<typeof buildSidebarItems>,
-    termCols: 0,
-    termRows: 0,
-  });
-
   const items = buildSidebarItems(agents);
+
+  // Unique folders from current agents + cwd as fallback
+  const folders = [...new Set(agents.map((a) => a.cwd))];
+  if (folders.length === 0) {
+    folders.push(process.cwd());
+  }
 
   // Terminal dimensions (total minus sidebar width and borders)
   const sidebarWidth = 26; // 24 + 2 border
   const termCols = (stdout?.columns ?? 80) - sidebarWidth - 2;
   const termRows = (stdout?.rows ?? 24) - 2;
 
-  // Keep ref in sync
-  stateRef.current = { activePane, sidebarIndex, items, termCols, termRows };
+  // Store latest values in refs for the event handler closure
+  const stateRef = useRef({
+    activePane,
+    sidebarIndex,
+    items,
+    termCols,
+    termRows,
+    mode,
+    spawnIndex,
+    folders,
+  });
+  stateRef.current = { activePane, sidebarIndex, items, termCols, termRows, mode, spawnIndex, folders };
 
   // Ensure raw mode stays enabled
   useEffect(() => {
@@ -89,40 +101,51 @@ export function App({ port, token }: Props) {
     }
   }, [terminal.activeId, agents, termCols, termRows, terminal.select]);
 
-  // Single input handler via Ink's internal event emitter
-  // This replaces useInput entirely to avoid double-handling
   const handleInput = useCallback(
     (data: string) => {
-      const { activePane, sidebarIndex, items, termCols, termRows } = stateRef.current;
+      const s = stateRef.current;
       const key = parseKey(data);
 
-      // Tab always toggles focus
+      // Spawn modal mode
+      if (s.mode === "spawn") {
+        if (key.name === "escape") {
+          setMode("normal");
+        } else if (key.name === "up") {
+          setSpawnIndex((i) => Math.max(0, i - 1));
+        } else if (key.name === "down") {
+          setSpawnIndex((i) => Math.min(s.folders.length - 1, i + 1));
+        } else if (key.name === "return") {
+          const folder = s.folders[s.spawnIndex];
+          if (folder) {
+            spawnAgent(folder).catch(() => {});
+          }
+          setMode("normal");
+        }
+        return;
+      }
+
+      // Normal mode — Tab always toggles focus
       if (key.name === "tab") {
         toggle();
         return;
       }
 
-      if (activePane === "sidebar") {
+      if (s.activePane === "sidebar") {
         if (key.name === "up") {
           setSidebarIndex((i) => Math.max(0, i - 1));
         } else if (key.name === "down") {
-          setSidebarIndex((i) => Math.min(items.length - 1, i + 1));
+          setSidebarIndex((i) => Math.min(s.items.length - 1, i + 1));
         } else if (key.name === "return") {
-          const item = items[sidebarIndex];
-          if (!item) return;
-          if (item.type === "agent" && item.agentId) {
-            terminal.select(item.agentId, termCols, termRows);
-          } else if (item.type === "new") {
-            spawnAgent(item.cwd).catch(() => {});
-          }
-        } else if (key.name === "char" && key.char === "c") {
-          const item = items[sidebarIndex];
+          const item = s.items[s.sidebarIndex];
           if (item) {
-            spawnAgent(item.cwd).catch(() => {});
+            terminal.select(item.agentId, s.termCols, s.termRows);
           }
+        } else if (key.name === "char" && key.char === "n") {
+          setSpawnIndex(0);
+          setMode("spawn");
         } else if (key.name === "char" && key.char === "k") {
-          const item = items[sidebarIndex];
-          if (item?.type === "agent" && item.agentId) {
+          const item = s.items[s.sidebarIndex];
+          if (item) {
             killAgent(item.agentId).catch(() => {});
           }
         } else if (key.name === "char" && key.char === "q") {
@@ -150,13 +173,19 @@ export function App({ port, token }: Props) {
       <Sidebar
         agents={agents}
         selectedIndex={sidebarIndex}
-        focused={activePane === "sidebar"}
+        focused={activePane === "sidebar" && mode === "normal"}
         connected={connected}
       />
-      <TerminalViewport
-        lines={terminal.lines}
-        focused={activePane === "terminal"}
-      />
+      {mode === "spawn" ? (
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <SpawnModal folders={folders} selectedIndex={spawnIndex} />
+        </Box>
+      ) : (
+        <TerminalViewport
+          lines={terminal.lines}
+          focused={activePane === "terminal"}
+        />
+      )}
     </Box>
   );
 }
