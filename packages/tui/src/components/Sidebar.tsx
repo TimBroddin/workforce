@@ -65,6 +65,7 @@ export function Sidebar({ agents, selectedIndex, focused, connected }: Props) {
       )}
       <Box flexGrow={1} />
       <Text dimColor>[n] New agent</Text>
+      <Text dimColor>[q] Exit</Text>
     </Box>
   );
 }

@@ -84,7 +84,9 @@ export function useTerminal(config: TerminalConfig) {
       if (!activeId) return;
       const session = sessionsRef.current.get(activeId);
       if (session && session.ws.readyState === WebSocket.OPEN) {
-        session.ws.send(data);
+        // Always send as binary — the daemon treats text frames as JSON control messages
+        const binary = typeof data === "string" ? new TextEncoder().encode(data) : data;
+        session.ws.send(binary);
       }
     },
     [activeId]
