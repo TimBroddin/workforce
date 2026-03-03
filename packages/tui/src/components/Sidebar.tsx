@@ -76,10 +76,10 @@ export function Sidebar({ agents, selectedIndex, focused, connected }: Props) {
       <Box borderStyle="single" borderColor="#374151" borderTop={false} borderLeft={false} borderRight={false} />
       <Box flexDirection="column" paddingTop={1}>
         <Text color="#6b7280">
-          <Text color="#60a5fa" bold>n</Text> new  <Text color="#60a5fa" bold>k</Text> kill  <Text color="#60a5fa" bold>q</Text> quit
+          <Text color="#60a5fa" bold>n</Text> new  <Text color="#60a5fa" bold>k</Text> kill  <Text color="#60a5fa" bold>x</Text> close
         </Text>
         <Text color="#6b7280">
-          <Text color="#60a5fa" bold>Tab</Text> switch pane
+          <Text color="#60a5fa" bold>Tab</Text> pane  <Text color="#60a5fa" bold>q</Text> quit
         </Text>
       </Box>
     </Box>

@@ -148,6 +148,11 @@ export function App({ port, token }: Props) {
           if (item) {
             killAgent(item.agentId).catch(() => {});
           }
+        } else if (key.name === "char" && key.char === "x") {
+          const item = s.items[s.sidebarIndex];
+          if (item) {
+            terminal.disconnect(item.agentId);
+          }
         } else if (key.name === "char" && key.char === "q") {
           terminal.disconnectAll();
           exit();
