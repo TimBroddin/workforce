@@ -1,10 +1,20 @@
-import { useState, useEffect, useRef } from "react";
-import { Box, useApp, useInput, useStdin, useStdout } from "ink";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Box, useApp, useStdin, useStdout } from "ink";
 import { useDaemon } from "./hooks/useDaemon";
 import { useTerminal } from "./hooks/useTerminal";
 import { useFocus } from "./hooks/useFocus";
 import { Sidebar, buildSidebarItems } from "./components/Sidebar";
 import { TerminalViewport } from "./components/Terminal";
+
+// Parse basic keypress info from raw stdin chunk
+function parseKey(data: string) {
+  if (data === "\t") return { name: "tab" } as const;
+  if (data === "\r") return { name: "return" } as const;
+  if (data === "\x1b[A") return { name: "up" } as const;
+  if (data === "\x1b[B") return { name: "down" } as const;
+  if (data === "\x1b") return { name: "escape" } as const;
+  return { name: "char", char: data } as const;
+}
 
 interface Props {
   port: number;
@@ -21,15 +31,25 @@ export function App({ port, token }: Props) {
   const { internal_eventEmitter, setRawMode } = useStdin() as any;
   const [sidebarIndex, setSidebarIndex] = useState(0);
   const prevAgentIdsRef = useRef<Set<string>>(new Set());
-  const activePaneRef = useRef(activePane);
-  activePaneRef.current = activePane;
+
+  // Store latest values in refs for the event handler closure
+  const stateRef = useRef({
+    activePane,
+    sidebarIndex,
+    items: [] as ReturnType<typeof buildSidebarItems>,
+    termCols: 0,
+    termRows: 0,
+  });
 
   const items = buildSidebarItems(agents);
 
   // Terminal dimensions (total minus sidebar width and borders)
   const sidebarWidth = 26; // 24 + 2 border
-  const termCols = (stdout?.columns ?? 80) - sidebarWidth - 2; // 2 for terminal border
-  const termRows = (stdout?.rows ?? 24) - 2; // 2 for terminal border
+  const termCols = (stdout?.columns ?? 80) - sidebarWidth - 2;
+  const termRows = (stdout?.rows ?? 24) - 2;
+
+  // Keep ref in sync
+  stateRef.current = { activePane, sidebarIndex, items, termCols, termRows };
 
   // Ensure raw mode stays enabled
   useEffect(() => {
@@ -69,68 +89,61 @@ export function App({ port, token }: Props) {
     }
   }, [terminal.activeId, agents, termCols, termRows, terminal.select]);
 
-  // Sidebar input via Ink's useInput (always active to keep raw mode on)
-  useInput((input, key) => {
-    // Tab always toggles focus regardless of pane
-    if (key.tab) {
-      toggle();
-      return;
-    }
+  // Single input handler via Ink's internal event emitter
+  // This replaces useInput entirely to avoid double-handling
+  const handleInput = useCallback(
+    (data: string) => {
+      const { activePane, sidebarIndex, items, termCols, termRows } = stateRef.current;
+      const key = parseKey(data);
 
-    // Only handle sidebar keys when sidebar is focused
-    if (activePane !== "sidebar") return;
-
-    if (key.upArrow) {
-      setSidebarIndex((i) => Math.max(0, i - 1));
-    } else if (key.downArrow) {
-      setSidebarIndex((i) => Math.min(items.length - 1, i + 1));
-    } else if (key.return) {
-      const item = items[sidebarIndex];
-      if (!item) return;
-      if (item.type === "agent" && item.agentId) {
-        terminal.select(item.agentId, termCols, termRows);
-      } else if (item.type === "new") {
-        spawnAgent(item.cwd).catch(() => {});
-      }
-    } else if (input === "c") {
-      const item = items[sidebarIndex];
-      if (item) {
-        spawnAgent(item.cwd).catch(() => {});
-      }
-    } else if (input === "k") {
-      const item = items[sidebarIndex];
-      if (item?.type === "agent" && item.agentId) {
-        killAgent(item.agentId).catch(() => {});
-      }
-    } else if (input === "q") {
-      terminal.disconnectAll();
-      exit();
-    }
-  });
-
-  // Raw stdin forwarding when terminal is focused
-  // Uses Ink's internal event emitter to get raw input data
-  useEffect(() => {
-    if (!internal_eventEmitter) return;
-
-    const handleRawInput = (data: string) => {
-      // Only forward when terminal pane is focused
-      if (activePaneRef.current !== "terminal") return;
-
-      // Tab (0x09) toggles back to sidebar
-      if (data === "\t") {
+      // Tab always toggles focus
+      if (key.name === "tab") {
         toggle();
         return;
       }
 
-      terminal.write(data);
-    };
+      if (activePane === "sidebar") {
+        if (key.name === "up") {
+          setSidebarIndex((i) => Math.max(0, i - 1));
+        } else if (key.name === "down") {
+          setSidebarIndex((i) => Math.min(items.length - 1, i + 1));
+        } else if (key.name === "return") {
+          const item = items[sidebarIndex];
+          if (!item) return;
+          if (item.type === "agent" && item.agentId) {
+            terminal.select(item.agentId, termCols, termRows);
+          } else if (item.type === "new") {
+            spawnAgent(item.cwd).catch(() => {});
+          }
+        } else if (key.name === "char" && key.char === "c") {
+          const item = items[sidebarIndex];
+          if (item) {
+            spawnAgent(item.cwd).catch(() => {});
+          }
+        } else if (key.name === "char" && key.char === "k") {
+          const item = items[sidebarIndex];
+          if (item?.type === "agent" && item.agentId) {
+            killAgent(item.agentId).catch(() => {});
+          }
+        } else if (key.name === "char" && key.char === "q") {
+          terminal.disconnectAll();
+          exit();
+        }
+      } else {
+        // Terminal focused — forward raw data to PTY
+        terminal.write(data);
+      }
+    },
+    [toggle, terminal, spawnAgent, killAgent, exit]
+  );
 
-    internal_eventEmitter.on("input", handleRawInput);
+  useEffect(() => {
+    if (!internal_eventEmitter) return;
+    internal_eventEmitter.on("input", handleInput);
     return () => {
-      internal_eventEmitter.removeListener("input", handleRawInput);
+      internal_eventEmitter.removeListener("input", handleInput);
     };
-  }, [internal_eventEmitter, terminal.write, toggle]);
+  }, [internal_eventEmitter, handleInput]);
 
   return (
     <Box flexDirection="row" width="100%" height="100%">
