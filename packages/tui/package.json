@@ -1,0 +1,15 @@
+{
+  "name": "@timbroddin/agenthub-tui",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "shared": "workspace:*",
+    "ink": "^5.1.0",
+    "react": "^18.3.1",
+    "@xterm/headless": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0"
+  }
+}
