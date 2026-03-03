@@ -3,6 +3,9 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
   "dependencies": {
     "shared": "workspace:*",
     "ink": "^5.1.0",

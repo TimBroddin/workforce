@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Box, useApp, useInput, useStdout } from "ink";
 import { useDaemon } from "./hooks/useDaemon";
 import { useTerminal } from "./hooks/useTerminal";
@@ -19,6 +19,7 @@ export function App({ port, token }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [sidebarIndex, setSidebarIndex] = useState(0);
+  const prevAgentIdsRef = useRef<Set<string>>(new Set());
 
   const items = buildSidebarItems(agents);
 
@@ -41,46 +42,58 @@ export function App({ port, token }: Props) {
     }
   }, [termCols, termRows, terminal.activeId]);
 
+  // Auto-disconnect removed agents
+  useEffect(() => {
+    const currentIds = new Set(agents.map((a) => a.sessionId));
+    for (const prevId of prevAgentIdsRef.current) {
+      if (!currentIds.has(prevId)) {
+        terminal.disconnect(prevId);
+      }
+    }
+    prevAgentIdsRef.current = currentIds;
+  }, [agents, terminal.disconnect]);
+
+  // Auto-select first agent when none is selected
+  useEffect(() => {
+    if (terminal.activeId === null && agents.length > 0) {
+      terminal.select(agents[0].sessionId, termCols, termRows);
+    }
+  }, [terminal.activeId, agents, termCols, termRows, terminal.select]);
+
+  // useInput is only active when sidebar is focused (isActive option)
+  // When terminal is focused, raw stdin forwarding handles all input
   useInput((input, key) => {
-    // Tab toggles focus
     if (key.tab) {
       toggle();
       return;
     }
-
-    if (activePane === "sidebar") {
-      if (key.upArrow) {
-        setSidebarIndex((i) => Math.max(0, i - 1));
-      } else if (key.downArrow) {
-        setSidebarIndex((i) => Math.min(items.length - 1, i + 1));
-      } else if (key.return) {
-        const item = items[sidebarIndex];
-        if (!item) return;
-        if (item.type === "agent" && item.agentId) {
-          terminal.select(item.agentId, termCols, termRows);
-        } else if (item.type === "new") {
-          spawnAgent(item.cwd).catch(() => {});
-        }
-      } else if (input === "c") {
-        const item = items[sidebarIndex];
-        if (item) {
-          spawnAgent(item.cwd).catch(() => {});
-        }
-      } else if (input === "k") {
-        const item = items[sidebarIndex];
-        if (item?.type === "agent" && item.agentId) {
-          killAgent(item.agentId).catch(() => {});
-        }
-      } else if (input === "q") {
-        terminal.disconnectAll();
-        exit();
+    if (key.upArrow) {
+      setSidebarIndex((i) => Math.max(0, i - 1));
+    } else if (key.downArrow) {
+      setSidebarIndex((i) => Math.min(items.length - 1, i + 1));
+    } else if (key.return) {
+      const item = items[sidebarIndex];
+      if (!item) return;
+      if (item.type === "agent" && item.agentId) {
+        terminal.select(item.agentId, termCols, termRows);
+      } else if (item.type === "new") {
+        spawnAgent(item.cwd).catch(() => {});
       }
-    } else {
-      // Terminal focused — forward input to PTY
-      // Ink's useInput doesn't give raw bytes for terminal forwarding.
-      // Raw stdin forwarding is handled by the useEffect below.
+    } else if (input === "c") {
+      const item = items[sidebarIndex];
+      if (item) {
+        spawnAgent(item.cwd).catch(() => {});
+      }
+    } else if (input === "k") {
+      const item = items[sidebarIndex];
+      if (item?.type === "agent" && item.agentId) {
+        killAgent(item.agentId).catch(() => {});
+      }
+    } else if (input === "q") {
+      terminal.disconnectAll();
+      exit();
     }
-  });
+  }, { isActive: activePane === "sidebar" });
 
   // Raw stdin forwarding when terminal is focused
   useEffect(() => {
