@@ -6,6 +6,8 @@ import { useFocus } from "./hooks/useFocus";
 import { Sidebar, buildSidebarItems } from "./components/Sidebar";
 import { TerminalViewport } from "./components/Terminal";
 import { SpawnModal } from "./components/SpawnModal";
+import { isMouseSequence, parseMouseEvent } from "./lib/mouse";
+import { groupAgentsByFolder } from "./lib/path-utils";
 
 // Parse basic keypress info from raw stdin chunk
 function parseKey(data: string) {
@@ -15,6 +17,33 @@ function parseKey(data: string) {
   if (data === "\x1b[B") return { name: "down" } as const;
   if (data === "\x1b") return { name: "escape" } as const;
   return { name: "char", char: data } as const;
+}
+
+// Build a y-coordinate → sidebar item index map based on the sidebar layout.
+// Layout (inside the border, so y starts at 2 for first content row):
+//   y=1: top border
+//   y=2: "* AgentHub connected"
+//   y=3: empty (marginBottom=1)
+//   For each folder group:
+//     y: folder header ("+ ~/path")
+//     y: agent row (one per agent)
+//     y: empty (marginBottom=1)
+//   ... (rest is spacer + separator + hints)
+function buildSidebarYMap(agents: import("shared").Agent[]): Map<number, number> {
+  const yMap = new Map<number, number>(); // y → sidebar item index
+  const groups = groupAgentsByFolder(agents);
+  let y = 4; // row 1=border, 2=header, 3=margin, 4=first group header
+  let itemIndex = 0;
+  for (const group of groups) {
+    y++; // folder header line
+    for (const _agent of group.agents) {
+      yMap.set(y, itemIndex);
+      y++;
+      itemIndex++;
+    }
+    y++; // marginBottom=1
+  }
+  return yMap;
 }
 
 type Mode = "normal" | "spawn";
@@ -28,7 +57,7 @@ export function App({ port, token }: Props) {
   const config = { port, token };
   const { agents, connected, spawnAgent, killAgent } = useDaemon(config);
   const terminal = useTerminal(config);
-  const { activePane, toggle } = useFocus();
+  const { activePane, setPane, toggle } = useFocus();
   const { exit } = useApp();
   const { stdout } = useStdout();
   const { internal_eventEmitter, setRawMode } = useStdin() as any;
@@ -46,9 +75,10 @@ export function App({ port, token }: Props) {
   }
 
   // Terminal dimensions (total minus sidebar width and borders)
-  const sidebarWidth = 34; // 32 + 2 border
-  const termCols = (stdout?.columns ?? 80) - sidebarWidth - 2;
-  const termRows = (stdout?.rows ?? 24) - 2;
+  const sidebarWidth = 34; // 32 content + 2 border
+  const termBorder = 2;    // terminal box left + right border
+  const termCols = Math.max(1, (stdout?.columns ?? 80) - sidebarWidth - termBorder);
+  const termRows = Math.max(1, (stdout?.rows ?? 24) - termBorder);
 
   // Store latest values in refs for the event handler closure
   const stateRef = useRef({
@@ -60,13 +90,19 @@ export function App({ port, token }: Props) {
     mode,
     spawnIndex,
     folders,
+    agents,
   });
-  stateRef.current = { activePane, sidebarIndex, items, termCols, termRows, mode, spawnIndex, folders };
+  stateRef.current = { activePane, sidebarIndex, items, termCols, termRows, mode, spawnIndex, folders, agents };
 
-  // Ensure raw mode stays enabled
+  // Enable mouse tracking + raw mode
   useEffect(() => {
     setRawMode(true);
-    return () => setRawMode(false);
+    // Enable SGR extended mouse mode + basic mouse mode
+    process.stdout.write("\x1b[?1000h\x1b[?1006h");
+    return () => {
+      process.stdout.write("\x1b[?1000l\x1b[?1006l");
+      setRawMode(false);
+    };
   }, [setRawMode]);
 
   // Keep sidebar index in bounds
@@ -104,6 +140,44 @@ export function App({ port, token }: Props) {
   const handleInput = useCallback(
     (data: string) => {
       const s = stateRef.current;
+
+      // Intercept mouse events — never forward to PTY
+      if (isMouseSequence(data)) {
+        const mouse = parseMouseEvent(data);
+        if (!mouse || mouse.button === "release") return;
+
+        // Click in sidebar area?
+        if (mouse.x <= sidebarWidth) {
+          if (mouse.button === "left") {
+            setPane("sidebar");
+            // Try to map click y to a sidebar agent item
+            const yMap = buildSidebarYMap(s.agents);
+            const idx = yMap.get(mouse.y);
+            if (idx !== undefined && idx < s.items.length) {
+              setSidebarIndex(idx);
+              const item = s.items[idx];
+              if (item) {
+                terminal.select(item.agentId, s.termCols, s.termRows);
+              }
+            }
+          } else if (mouse.button === "wheel-up") {
+            setSidebarIndex((i) => Math.max(0, i - 1));
+          } else if (mouse.button === "wheel-down") {
+            setSidebarIndex((i) => Math.min(s.items.length - 1, i + 1));
+          }
+        } else {
+          // Click/scroll in terminal area
+          if (mouse.button === "left") {
+            setPane("terminal");
+          } else if (mouse.button === "wheel-up") {
+            terminal.scrollUp();
+          } else if (mouse.button === "wheel-down") {
+            terminal.scrollDown();
+          }
+        }
+        return;
+      }
+
       const key = parseKey(data);
 
       // Spawn modal mode
@@ -162,7 +236,7 @@ export function App({ port, token }: Props) {
         terminal.write(data);
       }
     },
-    [toggle, terminal, spawnAgent, killAgent, exit]
+    [toggle, setPane, terminal, spawnAgent, killAgent, exit]
   );
 
   useEffect(() => {
@@ -174,7 +248,7 @@ export function App({ port, token }: Props) {
   }, [internal_eventEmitter, handleInput]);
 
   return (
-    <Box flexDirection="row" width="100%" height="100%">
+    <Box flexDirection="row" width="100%" height={stdout?.rows ?? 24}>
       <Sidebar
         agents={agents}
         selectedIndex={sidebarIndex}
@@ -189,6 +263,7 @@ export function App({ port, token }: Props) {
         <TerminalViewport
           lines={terminal.lines}
           focused={activePane === "terminal"}
+          scrollOffset={terminal.scrollOffset}
         />
       )}
     </Box>

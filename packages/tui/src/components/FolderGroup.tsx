@@ -13,7 +13,7 @@ export function FolderGroup({ cwd, agents, selectedId }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text color="#8b5cf6" bold>
-        {"  "}📁 {shortenPath(cwd)}
+        {"  "}+ {shortenPath(cwd)}
       </Text>
       {agents.map((agent) => (
         <AgentRow

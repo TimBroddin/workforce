@@ -38,10 +38,11 @@ export function Sidebar({ agents, selectedIndex, focused, connected }: Props) {
       borderStyle="round"
       borderColor={focused ? "#3b82f6" : "#374151"}
       paddingX={1}
+      overflowY="hidden"
     >
       <Box marginBottom={1}>
         <Text bold color="#e2e8f0">
-          ⚡ AgentHub
+          * AgentHub
         </Text>
         <Text> </Text>
         {connected
@@ -73,7 +74,7 @@ export function Sidebar({ agents, selectedIndex, focused, connected }: Props) {
         </Box>
       )}
       <Box flexGrow={1} />
-      <Box borderStyle="single" borderColor="#374151" borderTop={false} borderLeft={false} borderRight={false} />
+      <Text color="#374151">{"─".repeat(28)}</Text>
       <Box flexDirection="column" paddingTop={1}>
         <Text color="#6b7280">
           <Text color="#60a5fa" bold>n</Text> new  <Text color="#60a5fa" bold>k</Text> kill  <Text color="#60a5fa" bold>x</Text> close

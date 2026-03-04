@@ -9,5 +9,9 @@ export function useFocus() {
     setActivePane((prev) => (prev === "sidebar" ? "terminal" : "sidebar"));
   }, []);
 
-  return { activePane, toggle };
+  const setPane = useCallback((pane: Pane) => {
+    setActivePane(pane);
+  }, []);
+
+  return { activePane, toggle, setPane };
 }

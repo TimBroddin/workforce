@@ -7,12 +7,22 @@ import type { IBufferCell, Terminal } from "@xterm/headless";
  * Ink's <Text> component can render raw ANSI escape codes, so we preserve
  * foreground/background colors and text attributes (bold, italic, underline).
  */
-export function extractBufferLines(terminal: Terminal, rows: number, cols: number): string[] {
+/**
+ * Returns the total number of scrollback + viewport lines in the buffer.
+ */
+export function getBufferLength(terminal: Terminal): number {
+  return terminal.buffer.active.length;
+}
+
+export function extractBufferLines(terminal: Terminal, rows: number, cols: number, scrollOffset = 0): string[] {
   const buffer = terminal.buffer.active;
   const lines: string[] = [];
 
+  // viewportY is the top of the live viewport. Scroll back from there.
+  const startY = buffer.viewportY - scrollOffset;
+
   for (let y = 0; y < rows; y++) {
-    const line = buffer.getLine(y + buffer.viewportY);
+    const line = buffer.getLine(startY + y);
     if (!line) {
       lines.push("");
       continue;

@@ -15,7 +15,7 @@ export function SpawnModal({ folders, selectedIndex }: Props) {
       paddingX={3}
       paddingY={1}
     >
-      <Text bold color="#e2e8f0">⚡ Spawn New Agent</Text>
+      <Text bold color="#e2e8f0">* Spawn New Agent</Text>
       <Text color="#6b7280">Select a workspace:</Text>
       <Text> </Text>
       {folders.map((folder, i) => (

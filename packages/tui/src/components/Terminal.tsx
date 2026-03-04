@@ -3,15 +3,17 @@ import { Box, Text } from "ink";
 interface Props {
   lines: string[];
   focused: boolean;
+  scrollOffset?: number;
 }
 
-export function TerminalViewport({ lines, focused }: Props) {
+export function TerminalViewport({ lines, focused, scrollOffset = 0 }: Props) {
   return (
     <Box
       flexDirection="column"
       flexGrow={1}
       borderStyle="round"
       borderColor={focused ? "#22c55e" : "#374151"}
+      overflowY="hidden"
     >
       {lines.length === 0 ? (
         <Box flexDirection="column" justifyContent="center" alignItems="center" flexGrow={1}>
@@ -23,9 +25,16 @@ export function TerminalViewport({ lines, focused }: Props) {
           <Text color="#4b5563">╰─────────────────────╯</Text>
         </Box>
       ) : (
-        lines.map((line, i) => (
-          <Text key={i}>{line}</Text>
-        ))
+        <>
+          {scrollOffset > 0 && (
+            <Box justifyContent="flex-end">
+              <Text color="#f59e0b" bold> [+{scrollOffset} lines] </Text>
+            </Box>
+          )}
+          {lines.map((line, i) => (
+            <Text key={i} wrap="truncate">{line}</Text>
+          ))}
+        </>
       )}
     </Box>
   );

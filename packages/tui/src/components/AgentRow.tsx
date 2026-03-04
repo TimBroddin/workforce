@@ -2,12 +2,12 @@ import { Box, Text } from "ink";
 import type { Agent, AgentStatus } from "shared";
 
 const STATUS_ICONS: Record<AgentStatus, string> = {
-  active: "⬤",
-  idle: "◯",
-  waitingForInput: "◉",
-  waitingForPermission: "◉",
-  stopped: "⊘",
-  orphaned: "⚠",
+  active: "●",
+  idle: "○",
+  waitingForInput: "◆",
+  waitingForPermission: "◆",
+  stopped: "×",
+  orphaned: "!",
 };
 
 const STATUS_COLORS: Record<AgentStatus, string> = {
@@ -49,7 +49,6 @@ export function AgentRow({ agent, selected }: Props) {
         {" "}
         <Text bold={selected}>{agent.name}</Text>
         {label ? <Text color={selected ? "#93c5fd" : "#6b7280"}> {label}</Text> : ""}
-        {"  "}
       </Text>
     </Box>
   );

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/headless";
-import { extractBufferLines } from "../lib/xterm-ink";
+import { extractBufferLines, getBufferLength } from "../lib/xterm-ink";
 
 interface TerminalConfig {
   port: number;
@@ -17,7 +17,12 @@ export function useTerminal(config: TerminalConfig) {
   const sessionsRef = useRef<Map<string, TerminalSession>>(new Map());
   const [lines, setLines] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const scrollOffsetRef = useRef(0);
   const renderTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep ref in sync for the render interval
+  scrollOffsetRef.current = scrollOffset;
 
   // Render the active terminal's buffer at ~15fps
   useEffect(() => {
@@ -25,7 +30,12 @@ export function useTerminal(config: TerminalConfig) {
       if (!activeId) return;
       const session = sessionsRef.current.get(activeId);
       if (!session) return;
-      const newLines = extractBufferLines(session.terminal, session.terminal.rows, session.terminal.cols);
+      const newLines = extractBufferLines(
+        session.terminal,
+        session.terminal.rows,
+        session.terminal.cols,
+        scrollOffsetRef.current,
+      );
       setLines(newLines);
     }, 66);
 
@@ -38,7 +48,7 @@ export function useTerminal(config: TerminalConfig) {
     (agentId: string, cols: number, rows: number) => {
       if (sessionsRef.current.has(agentId)) return;
 
-      const terminal = new Terminal({ cols, rows, allowProposedApi: true });
+      const terminal = new Terminal({ cols, rows, scrollback: 5000, allowProposedApi: true });
       const url = `ws://localhost:${config.port}/ws/terminal/${agentId}?token=${config.token}&cols=${cols}&rows=${rows}`;
       const ws = new WebSocket(url);
       ws.binaryType = "arraybuffer";
@@ -48,6 +58,13 @@ export function useTerminal(config: TerminalConfig) {
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           terminal.write(new Uint8Array(event.data));
+          // Auto-snap to bottom when new output arrives and we're scrolled back
+          if (scrollOffsetRef.current > 0) {
+            // Only auto-snap if we're near the bottom (within 3 lines)
+            if (scrollOffsetRef.current <= 3) {
+              setScrollOffset(0);
+            }
+          }
         }
       };
 
@@ -75,6 +92,7 @@ export function useTerminal(config: TerminalConfig) {
         connect(agentId, cols, rows);
       }
       setActiveId(agentId);
+      setScrollOffset(0); // Reset scroll when switching agents
     },
     [connect]
   );
@@ -88,8 +106,28 @@ export function useTerminal(config: TerminalConfig) {
         const binary = typeof data === "string" ? new TextEncoder().encode(data) : data;
         session.ws.send(binary);
       }
+      // Snap to bottom when user types
+      setScrollOffset(0);
     },
     [activeId]
+  );
+
+  const scrollUp = useCallback(
+    (amount = 3) => {
+      if (!activeId) return;
+      const session = sessionsRef.current.get(activeId);
+      if (!session) return;
+      const maxScroll = Math.max(0, getBufferLength(session.terminal) - session.terminal.rows);
+      setScrollOffset((prev) => Math.min(maxScroll, prev + amount));
+    },
+    [activeId]
+  );
+
+  const scrollDown = useCallback(
+    (amount = 3) => {
+      setScrollOffset((prev) => Math.max(0, prev - amount));
+    },
+    []
   );
 
   const resize = useCallback(
@@ -111,5 +149,17 @@ export function useTerminal(config: TerminalConfig) {
     }
   }, [disconnect]);
 
-  return { lines, activeId, select, write, resize, connect, disconnect, disconnectAll };
+  return {
+    lines,
+    activeId,
+    scrollOffset,
+    select,
+    write,
+    scrollUp,
+    scrollDown,
+    resize,
+    connect,
+    disconnect,
+    disconnectAll,
+  };
 }
