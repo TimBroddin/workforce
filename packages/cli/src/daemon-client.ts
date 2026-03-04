@@ -7,7 +7,7 @@ const AGENTHUB_DIR = join(homedir(), ".agenthub");
 const TOKEN_PATH = join(AGENTHUB_DIR, "daemon.token");
 const PORT_PATH = join(AGENTHUB_DIR, "daemon.port");
 const PID_PATH = join(AGENTHUB_DIR, "daemon.pid");
-const DAEMON_ENTRY = join(import.meta.dir, "../../daemon/src/index.ts");
+const DAEMON_ENTRY = join(import.meta.dir, "daemon/index.ts");
 
 export async function ensureDaemon(): Promise<{ port: number; token: string }> {
   // Check if daemon is already running

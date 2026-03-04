@@ -8,7 +8,7 @@ const TEST_HOME = "/tmp/agenthub-integration-test";
 const AGENTHUB_DIR = join(TEST_HOME, ".agenthub");
 const TOKEN_PATH = join(AGENTHUB_DIR, "daemon.token");
 const PORT_PATH = join(AGENTHUB_DIR, "daemon.port");
-const DAEMON_ENTRY = join(import.meta.dir, "../../daemon/src/index.ts");
+const DAEMON_ENTRY = join(import.meta.dir, "../src/daemon/index.ts");
 
 let daemonProcess: ReturnType<typeof Bun.spawn>;
 let baseUrl: string;

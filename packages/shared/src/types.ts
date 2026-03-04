@@ -55,13 +55,13 @@ export interface SocketMessage {
   tool_name?: string;
   notification_type?: string;
   agent_type?: string;
-  tmux_session?: string;
   input_tokens?: number;
   output_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
   transcript_path?: string;
   notification_message?: string;
+  pane_title?: string;
 }
 
 // Hook event base (stdin JSON from Claude Code hooks)
@@ -116,4 +116,4 @@ export type TerminalServerMessage = { type: "scrollback"; data: string }; // bas
 
 // Allowed agent types and flags
 export const ALLOWED_AGENT_TYPES = ["claude", "codex", "opencode", "bash"] as const;
-export const ALLOWED_FLAGS = ["--dangerously-skip-permissions"] as const;
+export const BLOCKED_FLAGS = ["--dangerously-skip-permissions"] as const;
