@@ -56,7 +56,17 @@ export class PTYManager {
     const proc = Bun.spawn({
       cmd: opts.cmd,
       cwd: opts.cwd,
-      env: { ...process.env, ...opts.env, AGENTHUB_SESSION: id, CLAUDECODE: "" },
+      env: {
+        ...process.env,
+        ...opts.env,
+        AGENTHUB_SESSION: id,
+        CLAUDECODE: "",
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        // Override TERM_PROGRAM so programs don't attempt inline image protocols
+        // (iTerm2/Kitty) that xterm-headless can't handle.
+        TERM_PROGRAM: "xterm",
+      },
       terminal: {
         cols,
         rows,

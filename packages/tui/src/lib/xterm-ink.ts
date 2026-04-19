@@ -1,5 +1,11 @@
 import type { IBufferCell, Terminal } from "@xterm/headless";
 
+// Matches leaked SGR fragments that appear as literal text in the buffer.
+// These occur when escape sequences are split across PTY data chunks —
+// xterm consumes the \x1b[ prefix but the tail (e.g. "8;2;255;220;220m")
+// ends up as visible cell content.
+const LEAKED_SGR_RE = /^[0-9;]+m$/;
+
 /**
  * Extract visible lines from an xterm buffer as strings with ANSI escapes.
  * Returns an array of strings, one per row, for the visible viewport.
@@ -44,6 +50,11 @@ export function extractBufferLines(terminal: Terminal, rows: number, cols: numbe
         str += " ";
         continue;
       }
+
+      // Skip trailing cells of wide characters (emoji, CJK).
+      // xterm uses width=2 for the first cell, width=0 for the continuation.
+      // Emitting anything for width-0 cells would misalign Ink's layout.
+      if (cell.getWidth() === 0) continue;
 
       const fg = cell.getFgColor();
       const bg = cell.getBgColor();
@@ -92,7 +103,16 @@ export function extractBufferLines(terminal: Terminal, rows: number, cols: numbe
         prevUnderline = underline;
       }
 
-      str += cell.getChars() || " ";
+      const chars = cell.getChars();
+      if (chars) {
+        // Skip leaked SGR tails — fragments like "8;2;255;220;220m" that
+        // appear when an escape sequence was split across data chunks.
+        if (!LEAKED_SGR_RE.test(chars)) {
+          str += chars;
+        }
+      } else {
+        str += " ";
+      }
     }
 
     str += "\x1b[0m"; // reset at end of line
